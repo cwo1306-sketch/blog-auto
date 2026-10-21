@@ -14,7 +14,7 @@ from tests.test_cardnews import ARTICLE_BODY, FULL
 
 def test_parse_evaluation_and_total():
     ev = rubric.parse_evaluation('설명 {"scores":{"fact":5,"attribution":3,"plain":4,"structure":5,"hook":2},"issues":[],"unsupported_claims":["x"],"summary":"ok"}')
-    assert ev.scores["hook"] == 2 and ev.unsupported_claims == ["x"]
+    assert ev.scores["hook"] == 2 and ev.unsupported_claims == [{"text": "x", "type": "사실 주장", "slide": None}]
     assert ev.total == round(5*.35 + 3*.15 + 4*.25 + 5*.1 + 2*.15, 2)
     ev2 = rubric.parse_evaluation('{"scores":{"fact":9,"attribution":0}}')
     assert ev2.scores["fact"] == 5 and ev2.scores["attribution"] == 1
@@ -82,7 +82,10 @@ def test_scores_sheet_export_and_human_import(tmp_path):
     ws = wb["채점"]
     header = [c.value for c in ws[1]]
     assert ws.cell(2, header.index("판정 사실 일치") + 1).value == 4
-    assert ws.cell(2, header.index("근거 없는 주장") + 1).value == "근거 없음 문장"
+    assert ws.cell(2, header.index("근거 없는 사실 주장") + 1).value == "근거 없음 문장"   # 유형 없는 옛 형식은 사실 주장으로
+    assert header.index("사람 총점") < header.index("판정 사실 일치")                       # 사람 칸이 앞
+    from openpyxl.utils import get_column_letter
+    assert ws.column_dimensions[get_column_letter(header.index("판정 사실 일치") + 1)].hidden  # 판정 열은 접혀 있음
     # 사람이 점수 입력
     for a, val in zip(rubric.AXES, [3, 4, 2, 5, 3]):
         ws.cell(2, header.index(f"사람 {rubric.AXIS_KO[a]}") + 1).value = val
@@ -133,10 +136,10 @@ def test_gate_and_ensure_judged(tmp_path):
 
     class FakeJudge:
         calls = 0
-        def evaluate(self, script, body, rules, meta=None):
+        def evaluate_stable(self, script, body, rules, meta=None):
             FakeJudge.calls += 1
             return rubric.Evaluation(scores={"fact": 2, "attribution": 4, "plain": 4, "structure": 4, "hook": 4},
-                                     unsupported_claims=["원문에 없는 문장"])
+                                     unsupported_claims=[{"text": "원문에 없는 문장", "type": "사실 주장", "slide": 2}])
     ev = rubric.ensure_judged(db, "002_2", v, FULL, ARTICLE_BODY, {}, FakeJudge())
     ok, why = rubric.gate(ev)
     assert not ok and "사실 일치 2점" in why and "원문에 없는 문장" in why
@@ -160,3 +163,35 @@ def test_judge_agree_column_roundtrip(tmp_path):
     wb.save(out)
     assert import_scores(db, out) == 1
     assert db.judge_agreement_counts() == {"일부": 1}
+
+
+def _ev(fact, claims):
+    return rubric.Evaluation(scores={"fact": fact, "attribution": 4, "plain": 3, "structure": 4, "hook": 4},
+                             unsupported_claims=[{"text": t, "type": ty, "slide": None} for t, ty in claims], usage={"model": "m"})
+
+
+def test_combine_two_and_three_runs():
+    a = _ev(3, [("조 의원 측 주장에 따르면 10MW", "사실 주장"), ("왜 못 쓸까?", "수사")])
+    b = _ev(3, [("조 의원 측 주장에 따르면 10MW.", "해석")])
+    c2 = rubric.combine([a, b])
+    assert c2.scores["fact"] == 3 and c2.stable and len(c2.runs) == 2
+    assert [x["text"] for x in c2.unsupported_claims] == ["조 의원 측 주장에 따르면 10MW"]      # 두 회차 모두에 나온 것만
+    assert c2.unsupported_claims[0]["type"] == "사실 주장"                                  # 한 번이라도 사실 주장이면 사실 주장
+    c3 = rubric.combine([_ev(3, []), _ev(2, [("x 문장입니다", "사실 주장")]), _ev(2, [("x 문장입니다", "사실 주장")])])
+    assert c3.scores["fact"] == 2 and not c3.stable and c3.factual_claims[0]["votes"] == 2
+
+
+def test_gate_only_blocks_factual_claims(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.insert(Article("002_2", "AI", "기사", "a.com", "2026-10-21T00:00:00+00:00", "https://n.news.naver.com/article/002/2", "", "", normalize_title("기사")), 1, True, "대기")
+    v = db.save_draft("002_2", FULL, [], "ai", {})
+    rhetoric = _ev(2, [("로봇 강국인데 AI는 왜 못 쓸까?", "수사"), ("비전 인코더는 특징을 뽑는다", "용어 풀이")])
+    db.save_evaluation("002_2", v, "judge", rhetoric.scores, rhetoric.total, rhetoric.to_dict())
+    assert rubric.gate(db.evaluation("002_2", v, "judge")) == (True, "")    # 수사·용어 풀이만이면 통과
+    factual = _ev(2, [("조경태 의원 측 주장에 따르면", "사실 주장")])
+    db.save_evaluation("002_2", v, "judge", factual.scores, factual.total, factual.to_dict())
+    ok, why = rubric.gate(db.evaluation("002_2", v, "judge"))
+    assert not ok and "사실 주장 1건" in why
+    ok3 = _ev(3, [("조경태 의원 측 주장에 따르면", "사실 주장")])
+    db.save_evaluation("002_2", v, "judge", ok3.scores, ok3.total, ok3.to_dict())
+    assert rubric.gate(db.evaluation("002_2", v, "judge"))[0]              # 사실 일치 3점이면 통과

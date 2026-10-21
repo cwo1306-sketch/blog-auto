@@ -41,10 +41,49 @@ BANNED_QUERY_WORDS = {
     "brand", "flag", "text", "sign", "billboard", "celebrity", "politician", "president",
 }
 MAX_STAT = 2
+EVIDENCE_MIN = 20
+_QUOTES = re.compile(r"[\s'\"‘’“”`]")
 
 
 def _norm(s: str) -> str:
     return s.replace(" ", "").replace(",", "")
+
+
+def _ntext(s: str) -> str:
+    """근거 대조용 정규화: 공백·따옴표 종류 차이를 없앤다."""
+    return _QUOTES.sub("", s or "")
+
+
+def slide_evidence(s: dict) -> list[str]:
+    ev = list(s.get("evidence") or [])
+    if not ev and s.get("slide_type") == "stat" and s.get("stat"):
+        ev = [s["stat"].get("source_quote", "")]        # stat 은 source_quote 가 곧 근거
+    if not ev and s.get("slide_type") == "quote" and s.get("body"):
+        ev = [s["body"]]                                 # quote 는 인용문이 곧 근거
+    return [e for e in ev if e]
+
+
+def check_evidence(i: int, s: dict, body_ntext: str) -> list[str]:
+    """3번 개선: 장의 근거 문장이 원문에 그대로 있는지, 장의 수치가 그 장의 근거 안에 있는지 결정적으로 대조한다."""
+    errors = []
+    ev = slide_evidence(s)
+    if not ev:
+        return [f"{i}장 근거 문장(evidence) 없음"]
+    for e in ev:
+        if len(_ntext(e)) < EVIDENCE_MIN // 2:
+            errors.append(f"{i}장 근거가 너무 짧음: '{e}'")
+        elif _ntext(e) not in body_ntext:
+            errors.append(f"{i}장 근거 문장이 원문에 없음: '{e[:40]}'")
+    ev_norm = _norm(" ".join(ev))
+    for num, unit in NUM_UNIT.findall(f"{s.get('title', '')} {s.get('body', '')}"):
+        n = num.replace(",", "")
+        while unit and unit[-1] in PARTICLES:
+            unit = unit[:-1]
+        if YEAR.match(n) or n not in _norm(body_ntext):
+            continue   # 연도는 넘어가고, 원문 자체에 없는 수치는 check_numbers 가 이미 잡는다
+        if n not in ev_norm:
+            errors.append(f"{i}장 수치 '{num}{unit}'가 이 장의 근거 문장에 없음 (다른 맥락의 수치일 수 있음)")
+    return errors
 
 
 def _texts(script: dict):
@@ -116,6 +155,7 @@ def check(script: dict, article_body: str) -> list[str]:
         errors.append("표지에 강조(highlight) 줄 없음")
     errors += check_queries("표지", script["cover"])
 
+    body_ntext = _ntext(article_body)
     fmt = script.get("format", "explainer")
     if fmt not in FORMATS:
         errors.append(f"알 수 없는 format '{fmt}'")
@@ -127,6 +167,7 @@ def check(script: dict, article_body: str) -> list[str]:
         kind = s.get("slide_type", "photo")
         is_stat = kind == "stat" and bool(s.get("stat"))
         tl = TYPE_LIMITS.get(kind, TYPE_LIMITS["photo"])
+        errors += check_evidence(i, s, body_ntext)
         if len(s.get("title", "")) > tl["title"]:
             errors.append(f"{i}장 제목 {len(s['title'])}자 > {tl['title']}자 ({kind})")
         lo, hi = tl["body"]

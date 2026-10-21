@@ -122,11 +122,12 @@ python -m naver_cardnews draft --top 10 # 대기 중 점수 상위 N건만: 본�
 ## 원고 품질 평가와 학습 (`docs/EVAL.md`)
 
 ```bash
-python -m naver_cardnews judge               # 5축 채점표(사실·출처·쉬운 말·구조·훅)로 LLM 판정 → 엑셀 '채점' 시트
+python -m naver_cardnews judge [--alt]       # 5축 채점표로 LLM 판정(2~3회 반복), --alt 면 Opus 비교 판정 → '채점' 시트
 python -m naver_cardnews calibrate           # '채점' 시트 사람 점수 vs 판정기: 축별 가중 카파·편향
 python -m naver_cardnews feedback --fewshot  # 엑셀 수정 유형 집계 + 잘 고쳐진 전후 쌍을 writer 예시로
 ```
-엑셀 시트: `채점`(판정 점수·근거 없는 주장·가독성 지표 + 사람 채점 노란 열), `피드백`(수정 유형 집계·처방).
+엑셀 시트: `채점`(앞쪽 노란 열에 사람 점수 → 접힌 열을 펼쳐 판정 확인 · 블라인드 순서), `피드백`(수정 유형 집계·처방).
+제작 게이트: 판정 사실 일치 ≤2 이고 근거 없는 '사실 주장'이 있으면 `make_card` 가 멈춘다. writer 는 장마다 근거 원문 문장(evidence)을 내고 validate 가 원문과 대조한다.
 
 ## 3단계 부품: 스톡 검색 + 비전 선택 + used_images + 숫자 카드
 

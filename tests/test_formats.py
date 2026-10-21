@@ -18,7 +18,8 @@ BODY = ("카카오가 21일 이미지를 이해하는 비전 인코더 2종을 �
 def test_all_sample_formats_pass_validation():
     for fmt, script in SAMPLES.items():
         s = writer.normalize_script(copy.deepcopy(script))
-        errs = [e for e in validate.check(s, BODY) if "원문에 없는 수치" not in e and "단위가 원문" not in e]
+        # 샘플은 구조 확인용이라 원문 대조(수치·근거)는 제외한다
+        errs = [e for e in validate.check(s, BODY) if "원문에 없는 수치" not in e and "단위가 원문" not in e and "근거" not in e]
         assert errs == [], (fmt, errs)
         assert s["format"] == fmt and all(sl["slide_type"] in ("photo", "stat", "list", "term", "qa", "compare", "quote") for sl in s["slides"])
         assert len(s["slides"]) == FORMATS[fmt]["body_slides"]

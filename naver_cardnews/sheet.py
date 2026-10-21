@@ -6,7 +6,7 @@ SLIDES = 6   # 본문 최대 장 수 (포맷에 따라 4~6장, 빈 장은 비워
 HL = "*"   # 표지 강조 줄 표시: 셀 값 앞에 '*'
 
 COVER_COLS = ["표지1", "표지2", "표지3", "표지 검색어", "표지 개념"]
-SLIDE_COLS = ["유형", "제목", "본문", "수치", "단위", "라벨", "인용", "검색어", "개념"]
+SLIDE_COLS = ["유형", "제목", "본문", "근거", "수치", "단위", "라벨", "인용", "검색어", "개념"]   # 근거: 원문 문장, 줄바꿈으로 여러 개
 TAIL_COLS = ["마무리 요약", "마무리 질문", "캡션", "해시태그"]
 META_COLS = ["id", "기사 제목", "상태", "점수", "언론사", "naver_link", "포맷"]
 RESULT_COLS = ["검수오류", "원고출처", "버전", "생성일시", "메모"]
@@ -46,6 +46,7 @@ def flatten(script: dict) -> dict[str, str]:
         row[slide_col(i, "유형")] = s.get("slide_type", "photo")
         row[slide_col(i, "제목")] = s.get("title", "")
         row[slide_col(i, "본문")] = s.get("body", "")
+        row[slide_col(i, "근거")] = "\n".join(s.get("evidence") or [])
         row[slide_col(i, "수치")] = str(st.get("value", "")) if st else ""
         row[slide_col(i, "단위")] = st.get("unit", "") if st else ""
         cmp = s.get("compare") or {}
@@ -103,7 +104,8 @@ def unflatten(row: dict) -> dict:
         if kind == "stat" and not stat:
             kind = "photo"
         qs = _queries(row.get(slide_col(i, "검색어")))
-        slides.append({"slide_type": kind, "title": g("제목"), "body": body,
+        evidence = [x.strip() for x in g("근거").splitlines() if x.strip()]
+        slides.append({"slide_type": kind, "title": g("제목"), "body": body, "evidence": evidence,
                        "label": g("라벨") if kind in ("term", "quote") else "",
                        "stat": stat, "compare": compare, "image_queries": qs, "image_query": qs[0] if qs else "",
                        "image_concept": g("개념")})

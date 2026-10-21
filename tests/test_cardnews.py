@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import sys
@@ -132,14 +133,17 @@ FULL = {
               "image_queries": ["abstract glass lens light", "camera aperture macro dark"], "image_concept": "이미지를 이해하는 시각 모델"},
     "slides": [
         {"slide_type": "photo", "title": "무엇을 공개했나", "body": "카카오가 이미지를 이해하는 비전 인코더 2종을 오픈소스로 공개했습니다. 회사 자료에 따르면 동급 모델보다 정확도가 높다고 합니다. 누구나 가져다 쓸 수 있습니다.",
-         "image_queries": ["glowing data streams converging", "server room corridor dark"], "image_concept": "공개, 개방"},
+         "image_queries": ["glowing data streams converging", "server room corridor dark"], "image_concept": "공개, 개방",
+         "evidence": ["카카오는 21일 이미지를 이해하는 비전 인코더 2종을 오픈소스로 공개했다", "동급 모델 대비 정확도가 12.5% 높았다"]},
         {"slide_type": "stat", "title": "얼마나 좋아졌나", "body": "회사 자료 기준 동급 모델 대비 정확도 차이입니다.",
          "stat": {"value": "12.5", "unit": "%", "label": "동급 대비 정확도 향상", "source_quote": "동급 모델 대비 정확도가 12.5% 높았다"},
-         "image_queries": [], "image_concept": ""},
+         "image_queries": [], "image_concept": "", "evidence": ["회사 자료에 따르면 벤치마크에서 동급 모델 대비 정확도가 12.5% 높았다"]},
         {"slide_type": "photo", "title": "언제 쓰이나", "body": "카카오는 올해 3분기에 이 모델을 자사 서비스에 순차적으로 적용할 계획입니다. 이용자는 사진 검색과 추천에서 먼저 변화를 체감하게 될 전망입니다.",
-         "image_queries": ["abstract timeline light path", "city skyline night minimal"], "image_concept": "적용, 전환"},
+         "image_queries": ["abstract timeline light path", "city skyline night minimal"], "image_concept": "적용, 전환",
+         "evidence": ["카카오는 올해 3분기에 이를 자사 서비스에 적용할 계획이며"]},
         {"slide_type": "photo", "title": "왜 중요한가", "body": "국내 기업이 핵심 부품을 통째로 공개한 것은 드문 일입니다. 연구 인력 40명이 참여했으며, 국내 AI 생태계 확산 효과가 기대된다고 회사는 설명했습니다.",
-         "image_queries": ["network nodes glowing abstract", "circuit board macro dark"], "image_concept": "생태계, 연결"},
+         "image_queries": ["network nodes glowing abstract", "circuit board macro dark"], "image_concept": "생태계, 연결",
+         "evidence": ["연구에 투입된 인력은 40명이다"]},
     ],
     "outro": {"summary": "카카오가 이미지를 이해하는 AI 핵심 부품을 공개했습니다", "question": "오픈소스 AI, 직접 써볼 생각 있나요?"},
     "caption": "카카오가 비전 인코더를 공개했습니다. 동급 모델보다 정확도가 높다고 합니다.\n자세한 내용은 카드에서 확인하세요.\n출처: 한국경제",
@@ -221,3 +225,26 @@ def test_writer_write_uses_client_and_records_usage(monkeypatch):
     s2 = writer.write({"press": "p", "date": "d", "title": "t", "body": "b"}, previous=s, errors=["3장 본문 130자"])
     assert "이전 원고" in captured["messages"][0]["content"] and "_usage" not in captured["messages"][0]["content"]
     assert s2["_usage"]["rewrite"] is True
+
+
+def test_validate_evidence_checks():
+    import validate
+    bad = copy.deepcopy(FULL)
+    bad["slides"][0]["evidence"] = []
+    bad["slides"][2]["evidence"] = ["원문에 없는 근거 문장을 지어냈습니다 정말로"]
+    bad["slides"][3]["body"] = bad["slides"][3]["body"].replace("40명", "12.5%")   # 원문에는 있지만 이 장 근거엔 없는 수치
+    errs = "\n".join(validate.check(bad, ARTICLE_BODY))
+    assert "2장 근거 문장(evidence) 없음" in errs
+    assert "4장 근거 문장이 원문에 없음" in errs
+    assert "5장 수치 '12.5%'가 이 장의 근거 문장에 없음" in errs
+    ok = copy.deepcopy(FULL)
+    ok["slides"][1]["evidence"] = []                                                  # stat 은 source_quote 가 근거
+    assert not any("3장 근거" in e for e in validate.check(ok, ARTICLE_BODY))
+
+
+def test_sheet_roundtrip_evidence():
+    from naver_cardnews import sheet
+    flat = sheet.flatten(FULL)
+    assert flat["2장 근거"].count("\n") == 1
+    back = sheet.unflatten(flat)
+    assert back["slides"][0]["evidence"] == FULL["slides"][0]["evidence"]

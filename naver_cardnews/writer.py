@@ -48,6 +48,10 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
   · compare 장: title=비교 축(14자) + compare={left:{label(8자), points[2~3, 각 22자]}, right:{label, points}}. 사진 없음.
   · quote 장: 기사에 실제로 있는 발언만. title=발언 요지(14자), body=인용문 그대로(따옴표 없이, 40~110자), label='이름 소속/직함'(20자). 사진 없음.
   · 사진 없는 장(list/term/qa/compare)은 image_queries를 빈 배열로, image_concept은 빈 문자열로 둔다.
+- 근거(evidence): 본문 모든 장에 evidence 배열을 단다. 그 장의 내용이 기대는 원문 문장을 1~2개, 토씨 하나 바꾸지 말고 그대로 복사한다
+  (문장의 일부만 옮겨도 되지만 20자 이상). 장에 나오는 모든 수치는 그 장의 evidence 안에 있어야 한다. evidence 로 뒷받침할 수 없는
+  사실·발언·주체는 쓰지 않는다. 비유·질문처럼 사실을 주장하지 않는 문장은 evidence 가 필요 없다.
+  수치나 발언의 주체는 evidence 에 적힌 그대로 밝힌다(기자 서술을 특정인의 발언으로 바꾸지 않는다).
 - 사진 지시(photo 장과 표지): image_queries는 영어 검색어 2개. 첫째는 은유형(abstract light, glass lens, data stream 같은 추상 장면),
   둘째는 구체형(server room corridor, circuit macro, city at night 같은 실제 장면). 각 2~5단어.
   실존 인물·기업명·제품명·로고·국기·글자가 보이는 장면은 넣지 않는다 (예: 'nvidia chip' 대신 'glowing processor macro').
@@ -63,6 +67,7 @@ JSON만 출력한다. 스키마:
  "cover":{"lines":[{"text":str,"highlight":bool}],"image_queries":[str,str],"image_concept":str},
  "slides":[{"slide_type":"photo"|"stat"|"list"|"term"|"qa"|"compare"|"quote","title":str,"body":str,"label":str,
             "image_queries":[str,str],"image_concept":str,
+            "evidence":[str],
             "stat":{"value":str,"unit":str,"label":str,"source_quote":str} | null,
             "compare":{"left":{"label":str,"points":[str]},"right":{"label":str,"points":[str]}} | null}],
  "outro":{"summary":str,"question":str},
@@ -157,6 +162,8 @@ def normalize_script(script: dict) -> dict:
         if kind != "compare":
             s["compare"] = None
         s.setdefault("title", ""); s.setdefault("body", ""); s.setdefault("label", "")
+        ev = s.get("evidence") or []
+        s["evidence"] = [str(x).strip() for x in (ev if isinstance(ev, list) else [ev]) if str(x).strip()][:3]
         fix_image(s)
     return script
 

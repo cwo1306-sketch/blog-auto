@@ -32,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
                                        "pick-image", "stat-card"])
     p.add_argument("--fewshot", action="store_true", help="feedback: 잘 고쳐진 쌍을 data/fewshot.json 으로 저장해 writer 예시로 사용")
     p.add_argument("--rejudge", action="store_true", help="judge: 기존 판정을 지우고 최신 원고 전부 다시 채점 (판정 프롬프트를 고친 뒤)")
+    p.add_argument("--alt", action="store_true", help="judge: 비교 판정기(Opus 5.5)로도 채점 (사람 기준선과 비교용)")
     p.add_argument("--top", type=int, help="draft: 원고를 만들 상위 건수 (기본 NAVER_CARDNEWS_DRAFT_TOP=10, run 에서는 0이면 생략)")
     p.add_argument("--no-sections", action="store_true", help="섹션 페이지 크롤링 끄기")
     p.add_argument("--format", choices=["auto", "explainer", "listicle", "numbers", "term", "qa", "compare"], default="auto",
@@ -121,27 +122,35 @@ def main(argv: list[str] | None = None) -> int:
                 print(rep.summary())
         if args.command == "judge" or (args.command == "run" and s.draft_top > 0 and s.anthropic_api_key):
             from .formats import format_rules
-            from .rubric import Judge
-            judge = Judge(s.anthropic_api_key)
-            if args.command == "judge" and args.rejudge:
-                print(f"기존 판정 {db.clear_judgements()}건 삭제", file=sys.stderr)
-            n = 0
-            for d in db.unjudged_drafts():
-                script = __import__("json").loads(d["script_json"])
-                try:
-                    ev = judge.evaluate(script, d["body"] or "", format_rules(script.get("format")),
-                                        meta={"press": d["press"], "title": d["article_title"], "date": (d["pub_date"] or "")[:10]})
-                except Exception as exc:  # noqa: BLE001
-                    print(f"  판정 실패 {d['article_id']}: {exc}", file=sys.stderr)
-                    continue
-                db.save_evaluation(d["article_id"], d["version"], "judge", ev.scores, ev.total, ev.to_dict())
-                n += 1
-                print(f"  판정 {d['article_id']} v{d['version']}: {ev.scores} 총점 {ev.total}", file=sys.stderr)
-            print(f"LLM 판정 {n}건")
+            from .rubric import ALT_JUDGE_MODEL, JUDGE_MODEL, Judge
+            judges = [("judge", JUDGE_MODEL)] + ([("judge_alt", ALT_JUDGE_MODEL)] if args.alt else [])
+            for source, model in judges:
+                judge = Judge(s.anthropic_api_key, model=model)
+                if args.command == "judge" and args.rejudge:
+                    print(f"기존 {source} 판정 {db.clear_judgements(source)}건 삭제", file=sys.stderr)
+                n = unstable = 0
+                for d in db.unjudged_drafts(source=source):
+                    script = __import__("json").loads(d["script_json"])
+                    try:
+                        ev = judge.evaluate_stable(script, d["body"] or "", format_rules(script.get("format")),
+                                                   meta={"press": d["press"], "title": d["article_title"], "date": (d["pub_date"] or "")[:10]})
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"  판정 실패 {d['article_id']}: {exc}", file=sys.stderr)
+                        continue
+                    db.save_evaluation(d["article_id"], d["version"], source, ev.scores, ev.total, ev.to_dict())
+                    n += 1
+                    unstable += 0 if ev.stable else 1
+                    print(f"  [{model}] {d['article_id']} v{d['version']}: {ev.scores} 총점 {ev.total} "
+                          f"(회차 {len(ev.runs)}{'' if ev.stable else ', 흔들림'}, 사실 주장 {len(ev.factual_claims)}건)", file=sys.stderr)
+                print(f"LLM 판정 [{model}] {n}건 (사실 일치 흔들림 {unstable}건)")
         if args.command == "calibrate":
-            from .rubric import agreement_report, total_report, verdict
+            from .rubric import ALT_JUDGE_MODEL, JUDGE_MODEL, agreement_report, total_report, verdict
+            for source, model in (("judge_alt", ALT_JUDGE_MODEL),):
+                tr2 = total_report(db.judge_human_totals(source))
+                if tr2["n"]:
+                    print(f"[비교 판정기 {model}] 사람과 {tr2['n']}건 · 순위 상관 {tr2['spearman']} · 평균 차 {tr2['bias']:+.2f} · 평균 절대오차 {tr2['mae']}")
             tr = total_report(db.judge_human_totals())
-            print(f"[총점 비교] 판정기·사람 {tr['n']}건")
+            print(f"[총점 비교 · 기본 판정기 {JUDGE_MODEL}] 사람과 {tr['n']}건")
             if tr["n"]:
                 rho = tr["spearman"]
                 print(f" - 순위 상관(스피어만) {rho if rho is not None else '표본 부족'} · 평균 차 {tr['bias']:+.2f} "

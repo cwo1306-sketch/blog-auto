@@ -298,26 +298,27 @@ class Database:
             (article_id, version, source),
         ).fetchone()
 
-    def clear_judgements(self) -> int:
-        cur = self.conn.execute("DELETE FROM evaluations WHERE source='judge'")
+    def clear_judgements(self, source: str = "judge") -> int:
+        cur = self.conn.execute("DELETE FROM evaluations WHERE source=?", (source,))
         self.conn.commit()
         return cur.rowcount
 
-    def unjudged_drafts(self, limit: int = 50) -> list[sqlite3.Row]:
-        """최신 버전인데 judge 점수가 없는 원고."""
+    def unjudged_drafts(self, limit: int = 50, source: str = "judge") -> list[sqlite3.Row]:
+        """최신 버전인데 해당 판정기(source) 점수가 없는 원고."""
         return self.conn.execute(
             "SELECT d.*, a.body, a.press, a.title AS article_title, a.pub_date FROM drafts d JOIN articles a ON a.id=d.article_id "
             "WHERE d.version=(SELECT MAX(version) FROM drafts x WHERE x.article_id=d.article_id) "
-            "AND NOT EXISTS (SELECT 1 FROM evaluations e WHERE e.article_id=d.article_id AND e.version=d.version AND e.source='judge') "
-            "ORDER BY d.created_at DESC LIMIT ?", (limit,)
+            "AND NOT EXISTS (SELECT 1 FROM evaluations e WHERE e.article_id=d.article_id AND e.version=d.version AND e.source=?) "
+            "ORDER BY d.created_at DESC LIMIT ?", (source, limit)
         ).fetchall()
 
-    def judge_human_totals(self) -> list[tuple[str, float, float]]:
+    def judge_human_totals(self, source: str = "judge") -> list[tuple[str, float, float]]:
         """(article_id, 판정 총점, 사람 총점) — 사람이 총점만 매긴 경우도 포함."""
         rows = self.conn.execute(
             "SELECT j.article_id, j.total AS jt, h.total AS ht FROM evaluations j JOIN evaluations h "
-            "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source='judge' "
-            "AND j.id=(SELECT MAX(id) FROM evaluations x WHERE x.article_id=j.article_id AND x.version=j.version AND x.source='judge')"
+            "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source=? "
+            "AND j.id=(SELECT MAX(id) FROM evaluations x WHERE x.article_id=j.article_id AND x.version=j.version AND x.source=?)",
+            (source, source),
         ).fetchall()
         return [(r["article_id"], float(r["jt"]), float(r["ht"])) for r in rows]
 
@@ -330,11 +331,11 @@ class Database:
                 out[a] = out.get(a, 0) + 1
         return out
 
-    def judge_human_pairs(self) -> list[tuple[dict, dict]]:
+    def judge_human_pairs(self, source: str = "judge") -> list[tuple[dict, dict]]:
         import json
         rows = self.conn.execute(
             "SELECT j.scores_json AS j, h.scores_json AS h FROM evaluations j JOIN evaluations h "
-            "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source='judge'"
+            "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source=?", (source,)
         ).fetchall()
         return [(json.loads(r["j"]), json.loads(r["h"])) for r in rows if json.loads(r["h"])]   # 총점만 매긴 행은 축별 보정에서 제외
 

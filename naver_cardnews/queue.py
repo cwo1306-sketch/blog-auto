@@ -130,6 +130,8 @@ def export_queue(db: Database, output: Path) -> int:
         meta.append([k, v])
     meta.append([])
     meta.append(["사용법", "상태를 '승인'으로 바꾸고 저장 → 다음 실행 때 DB로 반영됩니다. 노란 열만 편집하세요."])
+    meta.append(["채점 순서", "① '채점' 시트 노란 열(사람 점수)을 먼저 채운다 — 판정기 열은 접혀 있다. "
+                              "② 다 채운 뒤 열 머리 위 [+] 로 판정기 열을 펼쳐 지적을 보고 '판정 동의'를 고른다. 순서를 지켜야 기준선이 오염되지 않는다."])
     meta.column_dimensions["A"].width = 16
 
     _backup(output)
@@ -188,34 +190,46 @@ AGREE_VALUES = ("동의", "일부", "비동의")   # 판정기가 지적한 문�
 
 
 def _write_scores_sheet(wb: Workbook, db: Database) -> int:
-    """기사별 최신 원고의 판정기 점수 + 사람 채점 입력란. 사람 점수(1~5)를 넣고 저장하면 다음 반입 때 evaluations(human)으로 들어간다."""
+    """블라인드 채점 시트.
+    ① 사람 칸(앞쪽 노란 열)을 먼저 채운다 — 기계 점수 열은 접혀(숨겨져) 있다.
+    ② 다 채운 뒤 열 머리 위의 [+] 를 눌러 판정기 열을 펼쳐 지적을 확인하고 '판정 동의'를 고른다.
+    사람 점수(1~5)는 다음 반입 때 evaluations(human)으로 들어간다."""
     ws = wb.create_sheet(SCORE_SHEET)
     judge_cols = [f"판정 {AXIS_KO[a]}" for a in AXES]
-    cols = (["id", "기사 제목", "포맷", "버전", "출처"] + judge_cols + ["판정 총점", "근거 없는 주장", "판정 총평",
-            "문장당 어절", "최장 문장 어절", "12어절 초과 문장"] + HUMAN_COLS)
+    machine_cols = (judge_cols + ["판정 총점", "판정 안정성", "근거 없는 사실 주장", "기타 지적(해석·수사·용어)", "판정 총평",
+                                  "Opus 총점", "Opus 사실 일치", "문장당 어절", "최장 문장 어절", "12어절 초과 문장"])
+    cols = ["id", "기사 제목", "포맷", "버전", "출처"] + HUMAN_COLS + machine_cols
     head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1F4E78")
     edit_head, edit_fill = PatternFill("solid", fgColor="BF8F00"), PatternFill("solid", fgColor="FFF2CC")
     low_fill = PatternFill("solid", fgColor="F8CBAD")
     for c, name in enumerate(cols, start=1):
         cell = ws.cell(row=1, column=c, value=name)
         cell.font, cell.fill = head_font, (edit_head if name in HUMAN_COLS else head_fill)
-        ws.column_dimensions[get_column_letter(c)].width = 40 if name in ("근거 없는 주장", "판정 총평", "기사 제목") else (24 if name == "사람 메모" else 12)
+        ws.column_dimensions[get_column_letter(c)].width = (40 if name in ("근거 없는 사실 주장", "기타 지적(해석·수사·용어)", "판정 총평", "기사 제목")
+                                                             else 24 if name == "사람 메모" else 12)
     ws.freeze_panes = "C2"
     rows = db.drafts_for_export()
     for r, d in enumerate(rows, start=2):
         script = json.loads(d["script_json"])
         j = db.evaluation(d["article_id"], d["version"], "judge")
+        o = db.evaluation(d["article_id"], d["version"], "judge_alt")
         h = db.evaluation(d["article_id"], d["version"], "human")
         js = json.loads(j["scores_json"]) if j else {}
         jd = json.loads(j["detail_json"]) if j else {}
         hs = json.loads(h["scores_json"]) if h else {}
         hd = json.loads(h["detail_json"]) if h else {}
+        claims = [c if isinstance(c, dict) else {"text": c, "type": "사실 주장"} for c in jd.get("unsupported_claims", [])]
+        factual = "\n".join(c["text"] for c in claims if c.get("type") == "사실 주장")
+        other = "\n".join(f"[{c.get('type')}] {c['text']}" for c in claims if c.get("type") != "사실 주장")
+        runs = jd.get("runs") or []
+        stability = (f"{len(runs)}회 일치" if jd.get("stable", True) else f"{len(runs)}회 중 흔들림 {[r.get('fact') for r in runs]}") if runs else ("1회" if j else "")
         pm = plain_metrics(script)
         values = ([d["article_id"], d["article_title"], script.get("format", ""), d["version"], d["source"]]
+                  + [h["total"] if h else ""] + [hs.get(a, "") for a in AXES] + [hd.get("judge_agree", ""), hd.get("memo", "")]
                   + [js.get(a, "") for a in AXES]
-                  + [j["total"] if j else "", "\n".join(jd.get("unsupported_claims", [])), jd.get("summary", ""),
-                     pm["avg_words"], pm["max_words"], pm["long_sentences"]]
-                  + [h["total"] if h else ""] + [hs.get(a, "") for a in AXES] + [hd.get("judge_agree", ""), hd.get("memo", "")])
+                  + [j["total"] if j else "", stability, factual, other, jd.get("summary", ""),
+                     o["total"] if o else "", json.loads(o["scores_json"]).get("fact", "") if o else "",
+                     pm["avg_words"], pm["max_words"], pm["long_sentences"]])
         for c, v in enumerate(values, start=1):
             cell = ws.cell(row=r, column=c, value=v)
             name = cols[c - 1]
@@ -223,8 +237,10 @@ def _write_scores_sheet(wb: Workbook, db: Database) -> int:
                 cell.fill = edit_fill
             if name.startswith("판정 ") and isinstance(v, int) and v <= 2:
                 cell.fill = low_fill
-            if name in ("근거 없는 주장", "판정 총평"):
+            if name in ("근거 없는 사실 주장", "기타 지적(해석·수사·용어)", "판정 총평"):
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
+            if name == "근거 없는 사실 주장" and v:
+                cell.fill = low_fill
         ws.row_dimensions[r].height = 60
     if rows:
         dv = DataValidation(type="decimal", operator="between", formula1="1", formula2="5", allow_blank=True)
@@ -237,6 +253,10 @@ def _write_scores_sheet(wb: Workbook, db: Database) -> int:
         col = get_column_letter(cols.index("판정 동의") + 1)
         dv2.add(f"{col}2:{col}{len(rows) + 1}")
         ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{len(rows) + 1}"
+    # 기계 점수 열은 접어 둔다 (블라인드 채점). 엑셀에서 열 머리 위 [+] 로 펼친다.
+    first = get_column_letter(cols.index(machine_cols[0]) + 1)
+    last = get_column_letter(cols.index(machine_cols[-1]) + 1)
+    ws.column_dimensions.group(first, last, hidden=True, outline_level=1)
     return len(rows)
 
 
