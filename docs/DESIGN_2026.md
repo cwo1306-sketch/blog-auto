@@ -72,3 +72,21 @@ v2에서 사진이 액자로 들어가 하단 여백의 중요도가 낮아졌�
 - https://www.adobe.com/express/learn/blog/graphic-design-trends-2026
 - https://picsart.com/blog/design-trends-2026/
 - https://www.designrush.com/trends/state-of-design
+
+
+## v2.2 혼합 폰트 (2026-10-21, 채택)
+
+Pretendard 단독 · 혼합 · 전체 주아체 세 버전을 같은 원고로 비교한 뒤 **혼합**을 채택했다.
+
+| 장 | 글꼴 | 이유 |
+|---|---|---|
+| 표지 헤드라인 | 배달의민족 주아체 90px | 피드에서 멈추게 하는 장. 친근함·계정 개성이 득 |
+| 마무리 요약 | 배달의민족 주아체 64px | 저장·공유를 부르는 장 |
+| 본문 제목·본문·숫자·인용·비교·라벨 | Pretendard | 수치와 발언을 전하는 장은 신뢰감이 우선. 주아체 숫자는 둥글어 가볍게 보이고, 긴 본문은 읽는 속도가 떨어진다 |
+
+- 주아체는 굵기가 하나(Regular)라 `font-weight: 400; font-synthesis: none` 으로 가짜 굵게를 막고, 자폭이 넓어 크기를 한 단계 낮췄다.
+- 글꼴 지정 순서: 로컬 설치명(`BM JUA_OTF` 맥 / `BM JUA_TTF` 윈도우 / `배달의민족 주아`) → 구글 폰트 `Jua`(OFL, 같은 글꼴) → Pretendard.
+  로컬 렌더링 PC에 배민 주아체나 Jua 중 하나가 설치돼 있어야 한다.
+- 라이선스: 구글 폰트판 Jua 는 SIL OFL 1.1, 배민 폰트도 상업 이용 무료. 폰트 파일 자체의 판매·재배포만 금지.
+- 위험 관리: 주아체는 광고·밈에 흔해 가벼워 보일 수 있다. 표지에만 쓰는 이유이고, 2주 니치 테스트에서 표지 폰트별 저장률을 비교해 최종 확정한다.
+- 전체 주아체 테마는 `CARDNEWS_THEME=jua`(`templates/theme_jua.css`)로 남겨 둔다.

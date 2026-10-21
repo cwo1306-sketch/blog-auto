@@ -2,7 +2,7 @@
    제목·숫자·표지만 배달의민족 주아체, 본문은 Pretendard 유지(긴 문장 가독성).
    주아체는 굵기가 하나(Regular)뿐이라 font-weight 를 400 으로 두고 굵기 합성을 끈다(가짜 굵게 방지).
    로컬 설치명(맥 BM JUA_OTF / 윈도우 BM JUA_TTF / 배달의민족 주아)과 구글 폰트명(Jua)을 모두 나열한다. */
-:root { --display: "BM JUA_OTF", "BM JUA_TTF", "BMJUA", "배달의민족 주아", "Jua", var(--font); }
+/* --display 는 card.css 에 정의돼 있다. 이 테마는 혼합(v2.2 기본)을 넘어 제목·숫자·인용까지 주아체로 바꾼다. */
 
 body.cover .line, body.slide h2, body.list h2, body.list .list-num, body.term .term, body.qa .q h2,
 body.compare h2, body.quote blockquote, body.outro .summary, body.stat .value, body.stat .stat-label,

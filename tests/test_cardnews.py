@@ -258,3 +258,11 @@ def test_theme_css_link(monkeypatch):
     assert "theme_" not in render.build_pages(SCRIPT, ["bg_01.jpg", "bg_02.jpg", None, None], "출처")[0]
     css = (ROOT / "templates" / "theme_jua.css").read_text(encoding="utf-8")
     assert "font-synthesis: none" in css and "BM JUA_OTF" in css and '"Jua"' in css
+
+
+def test_mixed_font_rules_in_card_css():
+    css = (ROOT / "templates" / "card.css").read_text(encoding="utf-8")
+    assert '--display: "BM JUA_OTF"' in css and '"Jua"' in css
+    rule = css[css.index("body.cover .line, body.outro .summary {"):]
+    assert "font-family: var(--display)" in rule[:200] and "font-synthesis: none" in rule[:200]
+    assert "body.stat .value, " not in rule[:200]     # 숫자 카드는 혼합에서 Pretendard 유지
