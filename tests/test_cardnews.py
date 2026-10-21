@@ -248,3 +248,13 @@ def test_sheet_roundtrip_evidence():
     assert flat["2장 근거"].count("\n") == 1
     back = sheet.unflatten(flat)
     assert back["slides"][0]["evidence"] == FULL["slides"][0]["evidence"]
+
+
+def test_theme_css_link(monkeypatch):
+    monkeypatch.setenv("CARDNEWS_THEME", "jua")
+    pages = render.build_pages(SCRIPT, ["bg_01.jpg", "bg_02.jpg", None, None], "출처")
+    assert all("templates/theme_jua.css" in p for p in pages)
+    monkeypatch.setenv("CARDNEWS_THEME", "")
+    assert "theme_" not in render.build_pages(SCRIPT, ["bg_01.jpg", "bg_02.jpg", None, None], "출처")[0]
+    css = (ROOT / "templates" / "theme_jua.css").read_text(encoding="utf-8")
+    assert "font-synthesis: none" in css and "BM JUA_OTF" in css and '"Jua"' in css

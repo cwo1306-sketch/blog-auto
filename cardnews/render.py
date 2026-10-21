@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright
 from naver_cardnews.stat_card import len_class
 
 HANDLE = os.environ.get("CARDNEWS_HANDLE", "@your_handle")
+# CARDNEWS_THEME=jua → templates/theme_jua.css 를 card.css 뒤에 덧씌운다 (폰트 테마)
 LABEL = "AI로 재가공한 뉴스"
 W, H = 1080, 1350
 GRID_CROP = (W - H * 3 / 4) / 2  # 프로필 그리드 3:4 노출 시 좌우로 잘리는 폭
@@ -32,8 +33,10 @@ def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num:
     photo = f"""<div class="photo"><div class="bg" style="background-image:url('{bg}')"></div></div>""" if bg else ""
     num_big = f'<div class="num-big">{num}</div>' if num else ""
     plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
+    theme = os.environ.get("CARDNEWS_THEME", "").strip()
+    theme_css = f'<link rel="stylesheet" href="../../templates/theme_{theme}.css">' if theme else ""
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<link rel="stylesheet" href="../../templates/card.css"></head>
+<link rel="stylesheet" href="../../templates/card.css">{theme_css}</head>
 <body class="{kind}{plain}">
 {photo}{num_big}
 <div class="pill">{LABEL}</div>
