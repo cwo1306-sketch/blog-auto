@@ -133,17 +133,19 @@ def _cand_dict(c: Candidate) -> dict:
 
 
 def pick(candidates: list[Candidate], headline: str, concept: str, scorer: Scorer, db: Database | None,
-         max_score_calls: int = 8, min_total: float = 3.0, similar_distance: int = 8) -> PickResult:
+         max_score_calls: int = 8, min_total: float = 3.0, similar_distance: int = 8,
+         exclude: set[tuple[str, str]] | None = None) -> PickResult:
     """후보 순서대로 점수를 매겨 최고점을 고른다. image_bytes가 채워진 후보만 심사한다.
 
     - 이미 쓴 사진(source, id)과 최근 30일 유사 해시(dHash)는 심사 전에 건너뛴다 (호출 절약)
     - 얼굴·글자·로고·브랜드 연상은 점수 0 (탈락)
     - 최고점이 min_total 미만이면 chosen=None → 호출자는 재검색 또는 단색 강등
+    - exclude: 이번 실행에서 이미 심사한 (소스, id). 재검색 때 같은 후보를 다시 심사하지 않게 한다
     """
     result = PickResult(chosen=None)
     calls = 0
     for c in candidates:
-        if c.image_bytes is None:
+        if c.image_bytes is None or (exclude and c.key in exclude):
             continue
         if db is not None and db.image_used(c.source, c.external_id):
             result.skipped_used.append(c)

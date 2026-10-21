@@ -71,14 +71,17 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
                 headline: str, concept: str, out: str) -> tuple[str | None, dict]:
     """검색 → 썸네일 → 비전 선택 → used_images 기록 → 원본 저장. 실패하면 (None, 사유)."""
     log: dict = {"queries": queries, "attempts": []}
+    seen: set[tuple[str, str]] = set()
     for attempt in range(2):
-        cands = pexels.search(queries, n=6 if attempt == 0 else 10)
+        cands = [c for c in pexels.search(queries, n=6 if attempt == 0 else 10) if c.key not in seen]
         for c in cands:
             try:
                 c.image_bytes = download(c.thumb_url)
             except Exception as exc:  # noqa: BLE001
                 log.setdefault("thumb_errors", []).append(f"{c.key}: {exc}")
-        result = pick(cands, headline, concept, scorer, db)
+        result = pick(cands, headline, concept, scorer, db, exclude=seen)
+        seen.update(c.key for c, _ in result.scored)
+        seen.update(c.key for c in cands)   # 심사 한도에 걸려 못 본 후보도 재검색 때 새 후보에 자리를 양보
         log["attempts"].append(result.to_dict())
         if result.chosen is not None:
             c = result.chosen
@@ -90,8 +93,8 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
             log["chosen"] = {"file": name, "source": c.source, "id": c.external_id,
                              "photographer": c.photographer, "url": c.page_url, "alt": c.alt}
             return name, log
-        # 재검색: 더 추상적인 질의로 넓힌다
-        queries = queries + ["abstract dark minimal light texture"]
+        # 재검색: 1차 질의는 이미 봤으므로 더 추상적인 질의로 바꾼다 (실측: 같은 질의 재검색은 같은 후보 8장을 다시 심사했다)
+        queries = ["abstract dark minimal light texture", "bokeh lights dark background", queries[0]]
     log["fallback"] = "plain"
     return None, log
 

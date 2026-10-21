@@ -94,6 +94,9 @@ def test_pick_skips_used_and_similar_and_hard_fails():
     d = r.to_dict(); assert d["chosen"]["id"] == "g" and d["candidates"][0]["vision"]["hard_fail"]
     # 전부 약하면 chosen 없음
     assert pick([weak], "h", "c", Scorer(), None).chosen is None
+    # exclude 된 후보는 심사하지 않는다
+    r2 = pick([good, weak], "h", "c", Scorer(), None, exclude={good.key})
+    assert [c.external_id for c, _ in r2.scored] == ["w"]
 
 
 def test_stat_validation_and_html():
