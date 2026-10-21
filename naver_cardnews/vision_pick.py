@@ -26,10 +26,11 @@ SYSTEM = (
     "- text_or_logo: 글자, 숫자, 간판, 로고, 워터마크가 보이면 true\n"
     "- brand_like: 특정 기업 제품·로고·캐릭터가 연상되면 true (예: 애플 제품 디자인, 테슬라 차량)\n"
     "- relevance: 주어진 기사 개념을 은유적으로라도 잘 표현하는가. 뻔한 로봇·파란 회로판 클리셰는 2 이하\n"
-    "- lower_third_clear: 하단 1/3이 단순·어두워 글자를 올려도 읽히는가\n"
+    "- lower_third_clear: 사진 하단이 단순해 액자 아래 글과 시각적으로 충돌하지 않는가\n"
     "- style_match: 차분한 어두운 톤·시네마틱·고급 테크 매거진 느낌인가. 과포화·스톡 느낌 강하면 2 이하"
 )
-WEIGHTS = {"relevance": 0.4, "lower_third_clear": 0.35, "style_match": 0.25}
+# v2 템플릿은 사진이 액자 안에 들어가 하단 여백이 덜 중요하고, 관련성이 약한 사진이 더 눈에 띈다 → 관련성 가중치 상향
+WEIGHTS = {"relevance": 0.5, "lower_third_clear": 0.2, "style_match": 0.3}
 
 
 @dataclass

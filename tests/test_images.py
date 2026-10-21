@@ -67,7 +67,7 @@ def test_parse_score_tolerates_fences():
     s = parse_score('```json\n{"faces": false, "text_or_logo": true, "relevance": 4, "lower_third_clear": 5, "style_match": 3, "reason": "x"}\n```')
     assert s.text_or_logo and s.hard_fail and s.total == 0.0
     s2 = parse_score('{"faces": false, "text_or_logo": false, "brand_like": false, "relevance": 4, "lower_third_clear": 5, "style_match": 3}')
-    assert s2.total == round(4*.4 + 5*.35 + 3*.25, 2)
+    assert s2.total == round(4*.5 + 5*.2 + 3*.3, 2)
     assert parse_score("no json here").error
 
 

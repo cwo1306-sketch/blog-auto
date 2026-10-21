@@ -37,9 +37,9 @@ body.notext .text, body.notext .pill, body.notext .source, body.notext .page, bo
 mark, .hl { background: linear-gradient(transparent 18%, var(--hl) 18%, var(--hl) 92%, transparent 92%); color: var(--ink); padding: 0 .06em; }
 
 /* 표지: 액자 사진 위, 대형 헤드라인 아래 (타이포가 주인공) */
-body.cover .photo { top: 128px; height: 640px; }
-body.cover .text  { position: absolute; left: var(--m); right: var(--m); top: 820px; }
-body.cover .line  { font-size: 84px; font-weight: 800; line-height: 1.14; letter-spacing: -0.035em; }
+body.cover .photo { top: 128px; height: 486px; }      /* 세로의 36% */
+body.cover .text  { position: absolute; left: var(--m); right: var(--m); bottom: 170px; }   /* 하단 기준: 사진과 글 사이가 비는 에디토리얼 구도 */
+body.cover .line  { font-size: 96px; font-weight: 800; line-height: 1.12; letter-spacing: -0.04em; }
 body.cover .handle { margin-top: 26px; }
 
 /* 본문 장: 큰 번호(01) + 액자 사진 + 제목 + 본문 */
