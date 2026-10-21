@@ -41,9 +41,9 @@ class Settings:
     request_interval: float = 0.2
     # 3단계 근접 중복: 제목+요약 문자 2-gram Jaccard
     # 2026-10-21 실측(700건): 0.5는 "우리금융 34.7조" 같은 명백한 동일 사건(0.42~0.49)을 놓쳐 0.4로 조정.
-    # 0.25~0.4에도 같은 사건이 섞여 있어(코스피 반등, 화성시 추진단) 경계 구간은 Haiku에 묻는다.
+    # 0.2~0.4에도 같은 사건이 섞여 있어(코스피 반등, 화성시 추진단) 경계 구간은 Haiku에 묻는다.
     sim_threshold: float = 0.4      # 이상이면 같은 사건
-    sim_borderline: float = 0.25    # 이상~threshold 미만이면 Haiku 판정
+    sim_borderline: float = 0.2     # 이상~threshold 미만이면 Haiku 판정 (제목 단독 유사도도 봄)
     cluster_window_hours: int = 72
     # 4단계 기게시 비교 기간(일)
     posted_window_days: int = 14
@@ -92,7 +92,7 @@ def load_settings(env_file: Path | None = None, keywords_file: Path | None = Non
         per_keyword=int(env("NAVER_CARDNEWS_PER_KEYWORD", "100")),
         max_age_days=int(env("NAVER_CARDNEWS_MAX_AGE_DAYS", "3")),
         sim_threshold=float(env("NAVER_CARDNEWS_SIM_THRESHOLD", "0.4")),
-        sim_borderline=float(env("NAVER_CARDNEWS_SIM_BORDERLINE", "0.25")),
+        sim_borderline=float(env("NAVER_CARDNEWS_SIM_BORDERLINE", "0.2")),
         judge_enabled=env("NAVER_CARDNEWS_JUDGE", "on").lower() not in ("off", "0", "false", "no"),
         niche_judge_enabled=env("NAVER_CARDNEWS_NICHE_JUDGE", "on").lower() not in ("off", "0", "false", "no"),
         anthropic_api_key=env("ANTHROPIC_API_KEY", ""),

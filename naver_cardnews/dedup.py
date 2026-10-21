@@ -3,7 +3,7 @@
 1. URL 완전 일치   : 네이버 oid_aid 같음 → 저장 안 함, 걸린 키워드만 추가
 2. 제목 정규화 일치: [단독]·[속보]·괄호·특수문자·공백 제거 후 같음 → 같은 클러스터, 제외
 3. 근접 중복       : 제목+요약 문자 2-gram Jaccard ≥ 0.4 (72시간 창) → 같은 클러스터, 대표만 대기
-                     0.25~0.4 경계는 Haiku 판정. (문서 시작값 0.5/0.35 → 실측 후 조정) 클러스터 크기(언론사 수) = 중요도 점수
+                     0.2~0.4 경계(제목 단독 유사도 포함)는 Haiku 판정. (문서 시작값 0.5/0.35 → 실측 후 조정) 클러스터 크기(언론사 수) = 중요도 점수
 4. 기게시 중복     : 최근 14일 '게시완료' 건과 같은 방식 비교 → 제외(기게시)
 """
 
@@ -31,7 +31,7 @@ def _grams(title: str, description: str) -> set[str]:
 
 
 class Deduplicator:
-    def __init__(self, db: Database, threshold: float = 0.4, borderline: float = 0.25,
+    def __init__(self, db: Database, threshold: float = 0.4, borderline: float = 0.2,
                  window_hours: int = 72, posted_days: int = 14, judge: Judge | None = None):
         self.db = db
         self.threshold = threshold
@@ -42,8 +42,13 @@ class Deduplicator:
         self.judge_calls = 0
 
     def _similar(self, a: Article, grams: set[str], rows: list[sqlite3.Row]) -> tuple[sqlite3.Row | None, float, str]:
-        """가장 유사한 행과 점수, 판정 근거. 임계 미만이면 (None, best, '')."""
+        """가장 유사한 행과 점수, 판정 근거. 임계 미만이면 (None, best, '').
+
+        자동 판정은 제목+요약 유사도만 쓴다. 경계 후보 선별에는 제목 단독 유사도도 함께 본다:
+        매체마다 요약문이 달라 같은 사건도 합산 유사도는 0.15 안팎까지 떨어지는데(실측: 카카오 비전 인코더
+        4건), 제목끼리는 0.2~0.45로 남기 때문이다. 후보는 점수 순 상위 5개까지 Haiku에 묻는다."""
         best_row, best_sim = None, 0.0
+        title_grams = char_bigrams(a.title)
         borderline: list[tuple[float, sqlite3.Row]] = []
         for row in rows:
             if row["id"] == a.id:
@@ -51,15 +56,17 @@ class Deduplicator:
             sim = jaccard(grams, _grams(row["title"], row["description"]))
             if sim >= self.threshold and sim > best_sim:
                 best_row, best_sim = row, sim
-            elif self.borderline <= sim < self.threshold:
-                borderline.append((sim, row))
+                continue
+            score = max(sim, jaccard(title_grams, char_bigrams(row["title"])))
+            if score >= self.borderline:   # 제목만 비슷해 임계를 넘어도 자동 판정은 않고 Haiku에 묻는다
+                borderline.append((score, row))
         if best_row is not None:
             return best_row, best_sim, f"j={best_sim:.2f}"
         if self.judge is not None:
-            for sim, row in sorted(borderline, key=lambda x: -x[0])[:3]:
+            for score, row in sorted(borderline, key=lambda x: -x[0])[:5]:
                 self.judge_calls += 1
                 if self.judge.same_event(a.title, a.description, row["title"], row["description"]):
-                    return row, sim, f"j={sim:.2f}, haiku=같음"
+                    return row, score, f"j={score:.2f}, haiku=같음"
         return None, best_sim, ""
 
     def decide(self, a: Article) -> Decision:

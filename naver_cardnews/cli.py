@@ -34,6 +34,12 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
+    if not args.verbose:  # anthropic SDK의 요청 로그 억제
+        logging.getLogger("httpx2").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+    if not args.verbose:  # anthropic SDK의 요청 로그 억제
+        logging.getLogger("httpx2").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
     s = load_settings(keywords_file=args.keywords)
     if args.db:
         s.db_path = args.db
