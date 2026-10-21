@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import os
+import re
 from html import escape
 
 from PIL import Image
@@ -35,6 +36,9 @@ def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num:
     plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
     theme = os.environ.get("CARDNEWS_THEME", "").strip()
     theme_css = f'<link rel="stylesheet" href="../../templates/theme_{theme}.css">' if theme else ""
+    palette = os.environ.get("CARDNEWS_PALETTE", "").strip()      # 기본 ocean 은 card.css 에 내장. 다른 팔레트 비교용
+    if palette:
+        theme_css += f'<link rel="stylesheet" href="../../templates/palette_{palette}.css">'
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <link rel="stylesheet" href="../../templates/card.css">{theme_css}</head>
 <body class="{kind}{plain}">
@@ -141,6 +145,8 @@ LAYOUT_JS = """() => {
           x: box.x, y: box.y, w: box.width, h: box.height, wrapped,
           value_overflow: num ? num.getBoundingClientRect().right > %d - 64 : false,
           photo_bottom: photo ? photo.getBoundingClientRect().bottom : null,
+          text_color: getComputedStyle(document.querySelector('.summary') || document.querySelector('.text h2')
+                                       || document.querySelector('.line') || document.querySelector('.text')).color,
           fonts: document.fonts.status};
 }""" % W
 
@@ -215,8 +221,11 @@ def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
                 bg_png = os.path.join(out_dir, f".bg_text_{n:02d}.png")
                 page.screenshot(path=bg_png, clip={"x": box["x"], "y": box["y"],
                                                    "width": box["w"], "height": box["h"]})
-                # 글자색은 잉크(#141414). 배경(종이·형광·사진)의 '어두운 쪽' 5퍼센타일 대비 글자가 충분히 어두운지 잰다
-                contrast = round(_contrast_dark_text(bg_png, _luminance((0x14, 0x14, 0x14))), 2)
+                # 실제 글씨 색으로 잰다: 어두운 글씨면 배경의 밝은 쪽이 아니라 어두운 쪽(5퍼센타일)이,
+                # 밝은 글씨(마무리 장 흰 글씨 등)면 배경의 밝은 쪽(95퍼센타일)이 가장 불리한 경우다.
+                rgb = tuple(int(x) for x in re.findall(r"\d+", box["text_color"])[:3]) or (0x14, 0x14, 0x14)
+                tl = _luminance(rgb)
+                contrast = round(_contrast(bg_png, tl) if tl > 0.4 else _contrast_dark_text(bg_png, tl), 2)
                 os.remove(bg_png)
                 if box["photo_bottom"] is not None and box["top"] < box["photo_bottom"] + 20:
                     issues.append(f"텍스트가 사진 액자와 겹침(top={box['top']:.0f}, photo_bottom={box['photo_bottom']:.0f})")
