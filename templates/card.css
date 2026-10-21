@@ -132,7 +132,7 @@ body.compare .vs { position: absolute; left: 50%; top: 50%; transform: translate
 
 
 /* 인용 카드: 전문가·기관 발언 (연합뉴스 카드뉴스의 인용 장) */
-body.quote .text { position: absolute; left: var(--m); right: var(--m); top: 220px; }
+body.quote .text { position: absolute; left: var(--m); right: var(--m); top: 50%; transform: translateY(-56%); }
 body.quote .qmark { font-size: 220px; line-height: .6; font-weight: 800; color: var(--hl-strong); height: 120px; }
 body.quote blockquote { margin: 0 0 40px; font-size: 56px; font-weight: 700; line-height: 1.32; letter-spacing: -0.03em; word-break: keep-all; }
 body.quote .who { font-size: 30px; font-weight: 700; color: var(--ink-2); padding-left: 22px; border-left: 6px solid var(--hl-strong); margin-bottom: 44px; }
