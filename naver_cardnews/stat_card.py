@@ -44,7 +44,7 @@ def validate_stat(stat: Stat, article_text: str | None = None) -> None:
 def len_class(value: str, unit: str) -> str:
     """숫자 글자 수 + 단위 폭(한글 단위는 숫자 1자 폭, 기호는 반 자)으로 크기 단계를 정한다.
     렌더 때 그래도 넘치면 render_png가 글자 크기를 더 줄인다."""
-    n = len(value.replace(",", "")) + (0.5 if "." in value else 0)
+    n = sum(ch.isdigit() for ch in value) + (0.5 if "." in value else 0)
     n += sum(1.0 if ord(ch) > 0x2E80 else 0.5 for ch in unit.strip())
     if n <= 3.5:
         return "short"
