@@ -58,7 +58,7 @@ def test_stage3_borderline_uses_judge():
             return True
 
     db = Database(":memory:")
-    dd = Deduplicator(db, judge=YesJudge())
+    dd = Deduplicator(db, threshold=0.5, borderline=0.35, judge=YesJudge())
     store(db, dd, make("001_1", "삼성전자 HBM4 양산 시작", "삼성전자가 차세대 HBM4 양산을 시작했다고 밝혔다"))
     d = store(db, dd, make("002_1", "삼성전자, HBM4 양산 돌입", "삼성전자가 차세대 HBM4 양산에 들어갔다고 밝혔다. 수율이 관건",
                             press="b.com"))

@@ -2,8 +2,8 @@
 
 1. URL 완전 일치   : 네이버 oid_aid 같음 → 저장 안 함, 걸린 키워드만 추가
 2. 제목 정규화 일치: [단독]·[속보]·괄호·특수문자·공백 제거 후 같음 → 같은 클러스터, 제외
-3. 근접 중복       : 제목+요약 문자 2-gram Jaccard ≥ 0.5 (72시간 창) → 같은 클러스터, 대표만 대기
-                     0.35~0.5 경계는 Haiku 판정. 클러스터 크기(언론사 수) = 중요도 점수
+3. 근접 중복       : 제목+요약 문자 2-gram Jaccard ≥ 0.4 (72시간 창) → 같은 클러스터, 대표만 대기
+                     0.25~0.4 경계는 Haiku 판정. (문서 시작값 0.5/0.35 → 실측 후 조정) 클러스터 크기(언론사 수) = 중요도 점수
 4. 기게시 중복     : 최근 14일 '게시완료' 건과 같은 방식 비교 → 제외(기게시)
 """
 
@@ -31,7 +31,7 @@ def _grams(title: str, description: str) -> set[str]:
 
 
 class Deduplicator:
-    def __init__(self, db: Database, threshold: float = 0.5, borderline: float = 0.35,
+    def __init__(self, db: Database, threshold: float = 0.4, borderline: float = 0.25,
                  window_hours: int = 72, posted_days: int = 14, judge: Judge | None = None):
         self.db = db
         self.threshold = threshold
