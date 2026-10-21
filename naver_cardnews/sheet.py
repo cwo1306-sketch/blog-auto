@@ -8,7 +8,7 @@ HL = "*"   # 표지 강조 줄 표시: 셀 값 앞에 '*'
 COVER_COLS = ["표지1", "표지2", "표지3", "표지 검색어", "표지 개념"]
 SLIDE_COLS = ["유형", "제목", "본문", "수치", "단위", "라벨", "인용", "검색어", "개념"]
 TAIL_COLS = ["마무리 요약", "마무리 질문", "캡션", "해시태그"]
-META_COLS = ["id", "기사 제목", "상태", "점수", "언론사", "naver_link"]
+META_COLS = ["id", "기사 제목", "상태", "점수", "언론사", "naver_link", "포맷"]
 RESULT_COLS = ["검수오류", "원고출처", "버전", "생성일시", "메모"]
 
 
@@ -23,11 +23,12 @@ def columns() -> list[str]:
     return cols + TAIL_COLS + RESULT_COLS
 
 
-EDITABLE = set(COVER_COLS + TAIL_COLS + ["메모"] + [slide_col(i, n) for i in range(2, 2 + SLIDES) for n in SLIDE_COLS])
+EDITABLE = set(COVER_COLS + TAIL_COLS + ["메모", "포맷"] + [slide_col(i, n) for i in range(2, 2 + SLIDES) for n in SLIDE_COLS])
+SEP = " ; "   # compare 포인트 구분자
 
 
 def flatten(script: dict) -> dict[str, str]:
-    row: dict[str, str] = {}
+    row: dict[str, str] = {"포맷": script.get("format", "explainer")}
     lines = script["cover"]["lines"]
     for k in range(3):
         if k < len(lines):
@@ -44,8 +45,14 @@ def flatten(script: dict) -> dict[str, str]:
         row[slide_col(i, "본문")] = s.get("body", "")
         row[slide_col(i, "수치")] = str(st.get("value", "")) if st else ""
         row[slide_col(i, "단위")] = st.get("unit", "") if st else ""
-        row[slide_col(i, "라벨")] = st.get("label", "") if st else ""
-        row[slide_col(i, "인용")] = st.get("source_quote", "") if st else ""
+        cmp = s.get("compare") or {}
+        if s.get("slide_type") == "compare" and cmp:
+            row[slide_col(i, "라벨")] = f"{cmp['left'].get('label', '')} | {cmp['right'].get('label', '')}"
+            row[slide_col(i, "본문")] = SEP.join(cmp["left"].get("points", []))
+            row[slide_col(i, "인용")] = SEP.join(cmp["right"].get("points", []))
+        else:
+            row[slide_col(i, "라벨")] = st.get("label", "") if st else s.get("label", "")
+            row[slide_col(i, "인용")] = st.get("source_quote", "") if st else ""
         row[slide_col(i, "검색어")] = " | ".join(s.get("image_queries") or [])
         row[slide_col(i, "개념")] = s.get("image_concept", "")
     row["마무리 요약"] = script["outro"]["summary"]
@@ -78,12 +85,25 @@ def unflatten(row: dict) -> dict:
         value = g("수치")
         stat = ({"value": value, "unit": g("단위"), "label": g("라벨"), "source_quote": g("인용")}
                 if kind == "stat" and value else None)
+        compare = None
+        body = g("본문")
+        if kind == "compare":
+            labels = [x.strip() for x in g("라벨").split("|")] + ["", ""]
+            compare = {"left": {"label": labels[0], "points": [p.strip() for p in body.split(";") if p.strip()]},
+                       "right": {"label": labels[1], "points": [p.strip() for p in g("인용").split(";") if p.strip()]}}
+            body = ""
+        if kind not in ("photo", "stat", "list", "term", "qa", "compare"):
+            kind = "photo"
+        if kind == "stat" and not stat:
+            kind = "photo"
         qs = _queries(row.get(slide_col(i, "검색어")))
-        slides.append({"slide_type": "stat" if stat else "photo", "title": g("제목"), "body": g("본문"),
-                       "stat": stat, "image_queries": qs, "image_query": qs[0] if qs else "",
+        slides.append({"slide_type": kind, "title": g("제목"), "body": body,
+                       "label": g("라벨") if kind == "term" else "",
+                       "stat": stat, "compare": compare, "image_queries": qs, "image_query": qs[0] if qs else "",
                        "image_concept": g("개념")})
     tags = [t if t.startswith("#") else "#" + t for t in _s(row.get("해시태그")).replace(",", " ").split() if t.strip("#")]
-    return {"cover": cover, "slides": slides,
+    fmt = _s(row.get("포맷")) or "explainer"
+    return {"format": fmt, "cover": cover, "slides": slides,
             "outro": {"summary": _s(row.get("마무리 요약")), "question": _s(row.get("마무리 질문"))},
             "caption": _s(row.get("캡션")), "hashtags": tags}
 

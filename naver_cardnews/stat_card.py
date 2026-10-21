@@ -28,8 +28,9 @@ class StatError(ValueError):
 
 def validate_stat(stat: Stat, article_text: str | None = None) -> None:
     """작성 규칙 검사. article_text를 주면 원문 대조까지 한다 (validate.py의 수치 대조 보완)."""
-    if not re.fullmatch(r"[0-9][0-9,]*(\.[0-9]{1,2})?", stat.value):
-        raise StatError(f"value는 숫자만, 소수점 둘째 자리까지: {stat.value!r}")
+    # 숫자(쉼표·소수점 둘째 자리)에 한국식 자릿수 단위(억·만·천·조)가 섞인 형태 허용: 55 / 34.7 / 1,000 / 4억2600만
+    if not re.fullmatch(r"[0-9][0-9,]*(\.[0-9]{1,2})?(?:[만억조천][0-9][0-9,]*)*[만억조천]?", stat.value):
+        raise StatError(f"value는 숫자만(쉼표·소수점 둘째 자리, 억·만 자릿수 허용): {stat.value!r}")
     if not stat.unit.strip():
         raise StatError("단위가 없는 숫자는 쓰지 않는다")
     if len(stat.label) > MAX_LABEL_CHARS:

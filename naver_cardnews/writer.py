@@ -19,6 +19,8 @@ import warnings
 
 import anthropic
 
+from .formats import FORMATS, format_rules
+
 log = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-5-5"
@@ -35,11 +37,15 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
 - 한자 약어(中·美·日·韓 등)를 쓰지 말고 한글로 쓴다.
 - 누가 주장한 수치인지(회사 자료인지, 공식 통계인지) 출처 주체를 본문에 밝힌다.
 - 표지: 2~3줄, 줄당 공백 포함 12자 이내. 가장 강한 훅 1~2줄은 highlight=true.
-- 본문 장: 정확히 4장. 흐름: 무슨 일인가 → 왜 중요한가 → 맥락·숫자 → 의미/전망.
-  · photo 장: title(공백 포함 14자 이내), body(공백 포함 90~120자, 존댓말 뉴스체 '~입니다/~습니다').
-  · stat 장: 기사의 핵심이 숫자 하나로 요약될 때만 쓴다. 게시물당 최대 2장, 연속 금지, 표지 바로 다음 장(2장)은 photo.
-    stat = {value: 숫자만(쉼표 허용, 소수점 둘째 자리까지), unit: 원문 단위(%, 조원, 억달러, 개…), label: 공백 포함 14자 이내 설명,
-    source_quote: 그 수치가 들어 있는 원문 문장을 토씨 하나 바꾸지 말고 그대로 복사}. stat 장도 title·body를 채운다(엑셀·캡션용).
+- 본문 장: 정확히 4장. 장 구성은 format(아래 '구성 템플릿')이 정한다. 모든 장은 존댓말 뉴스체 '~입니다/~습니다'.
+  · photo 장: title(공백 포함 14자 이내), body(공백 포함 90~120자). 사진 지시 필요.
+  · stat 장: 핵심이 숫자 하나일 때. stat = {value: 숫자만(쉼표 허용, 소수점 둘째 자리까지), unit: 원문 단위, label: 14자 이내 설명,
+    source_quote: 그 수치가 든 원문 문장을 토씨 하나 바꾸지 말고 그대로 복사}. title·body도 채운다. explainer에서는 최대 2장, 연속 금지, 2장은 photo.
+  · list 장: title(14자, 명사형) + body(60~110자). 번호는 코드가 붙인다. 사진 없음.
+  · term 장: title=용어(10자) + label=한 줄 정의(30자) + body=비유 설명(60~110자). 사진 없음.
+  · qa 장: title=질문(30자, 물음표로 끝) + body=답(60~120자, 결론 먼저). 사진 없음.
+  · compare 장: title=비교 축(14자) + compare={left:{label(8자), points[2~3, 각 22자]}, right:{label, points}}. 사진 없음.
+  · 사진 없는 장(list/term/qa/compare)은 image_queries를 빈 배열로, image_concept은 빈 문자열로 둔다.
 - 사진 지시(photo 장과 표지): image_queries는 영어 검색어 2개. 첫째는 은유형(abstract light, glass lens, data stream 같은 추상 장면),
   둘째는 구체형(server room corridor, circuit macro, city at night 같은 실제 장면). 각 2~5단어.
   실존 인물·기업명·제품명·로고·국기·글자가 보이는 장면은 넣지 않는다 (예: 'nvidia chip' 대신 'glowing processor macro').
@@ -51,12 +57,17 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
 - hashtags: 8~10개, '#' 포함. 앞 3개는 고정(#AI뉴스 #AI #테크뉴스), 나머지는 기사 고유 키워드(기업·기술·제품명 가능).
 
 JSON만 출력한다. 스키마:
-{"cover":{"lines":[{"text":str,"highlight":bool}],"image_queries":[str,str],"image_concept":str},
- "slides":[{"slide_type":"photo"|"stat","title":str,"body":str,
+{"format":"explainer"|"listicle"|"numbers"|"term"|"qa"|"compare",
+ "cover":{"lines":[{"text":str,"highlight":bool}],"image_queries":[str,str],"image_concept":str},
+ "slides":[{"slide_type":"photo"|"stat"|"list"|"term"|"qa"|"compare","title":str,"body":str,"label":str,
             "image_queries":[str,str],"image_concept":str,
-            "stat":{"value":str,"unit":str,"label":str,"source_quote":str} | null}],
+            "stat":{"value":str,"unit":str,"label":str,"source_quote":str} | null,
+            "compare":{"left":{"label":str,"points":[str]},"right":{"label":str,"points":[str]}} | null}],
  "outro":{"summary":str,"question":str},
- "caption":str,"hashtags":[str]}"""
+ "caption":str,"hashtags":[str]}
+
+구성 템플릿
+{FORMAT_RULES}"""
 
 PICK_SYSTEM = """카드뉴스 배경 사진을 고른다. 후보 사진 설명(alt) 목록과 카드 문구가 주어진다.
 문구의 주제를 가장 직접적으로 떠올리게 하는 사진 1장을 고른다.
@@ -118,16 +129,32 @@ def normalize_script(script: dict) -> dict:
         item.setdefault("image_concept", "")
 
     fix_image(script["cover"])
+    script["format"] = script.get("format") if script.get("format") in FORMATS else "explainer"
     for s in script["slides"]:
-        s["slide_type"] = "stat" if s.get("slide_type") == "stat" and s.get("stat") else "photo"
-        if s["slide_type"] != "stat":
+        kind = s.get("slide_type") or "photo"
+        if kind == "stat" and not s.get("stat"):
+            kind = "photo"
+        if kind == "compare" and not s.get("compare"):
+            kind = "photo"
+        if kind not in ("photo", "stat", "list", "term", "qa", "compare"):
+            kind = "photo"
+        s["slide_type"] = kind
+        if kind != "stat":
             s["stat"] = None
-        s.setdefault("title", ""); s.setdefault("body", "")
+        if kind != "compare":
+            s["compare"] = None
+        s.setdefault("title", ""); s.setdefault("body", ""); s.setdefault("label", "")
         fix_image(s)
     return script
 
 
-def write(article: dict, previous: dict | None = None, errors: list[str] | None = None) -> dict:
+def system_prompt(fmt: str | None = None) -> str:
+    return SYSTEM.replace("{FORMAT_RULES}", format_rules(fmt))
+
+
+def write(article: dict, previous: dict | None = None, errors: list[str] | None = None,
+          fmt: str | None = None) -> dict:
+    """fmt: FORMATS 키 또는 None/'auto'(모델이 고른다)."""
     user = (f"언론사: {article['press']}\n날짜: {article['date']}\n"
             f"제목: {article['title']}\n\n본문:\n{article['body']}")
     if previous:
@@ -136,7 +163,7 @@ def write(article: dict, previous: dict | None = None, errors: list[str] | None 
                  + "\n\n검수에서 아래 문제가 나왔다. 해당 부분만 고쳐 전체 JSON을 다시 출력해라.\n- "
                  + "\n- ".join(errors or []))
     msg = _client().messages.create(
-        model=MODEL, max_tokens=16000, system=SYSTEM,
+        model=MODEL, max_tokens=16000, system=system_prompt(fmt),
         output_config={"effort": "medium"},
         messages=[{"role": "user", "content": user}],
     )
@@ -147,7 +174,7 @@ def write(article: dict, previous: dict | None = None, errors: list[str] | None 
     script = normalize_script(parse_script(_text(msg)))
     u = msg.usage
     script["_usage"] = {"model": MODEL, "input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
-                        "rewrite": bool(previous)}
+                        "rewrite": bool(previous), "format": script["format"]}
     return script
 
 

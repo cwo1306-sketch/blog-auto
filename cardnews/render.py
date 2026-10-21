@@ -31,7 +31,7 @@ def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num:
     """2026 템플릿: 사진은 풀블리드가 아니라 .photo 액자 안에, 본문 장은 큰 번호(.num-big)를 단다."""
     photo = f"""<div class="photo"><div class="bg" style="background-image:url('{bg}')"></div></div>""" if bg else ""
     num_big = f'<div class="num-big">{num}</div>' if num else ""
-    plain = "" if (bg or kind in ("stat", "outro")) else " plain"
+    plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare")) else " plain"
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <link rel="stylesheet" href="../../templates/card.css"></head>
 <body class="{kind}{plain}">
@@ -53,8 +53,35 @@ def _stat_inner(stat: dict) -> str:
             f'<div class="quote">{escape(quote)}</div>')
 
 
+def _list_inner(num: str, s: dict) -> str:
+    return (f'<div class="text"><div class="list-num">{num}</div><h2>{escape(s.get("title", ""))}</h2>'
+            f'<p>{escape(s.get("body", ""))}</p></div>')
+
+
+def _term_inner(s: dict) -> str:
+    return (f'<div class="text"><div class="kicker">이 단어, 뭐길래</div>'
+            f'<div class="term"><mark>{escape(s.get("title", ""))}</mark></div>'
+            f'<div class="definition">{escape(s.get("label", ""))}</div>'
+            f'<p>{escape(s.get("body", ""))}</p></div>')
+
+
+def _qa_inner(num: str, s: dict) -> str:
+    return (f'<div class="text"><div class="q"><span class="badge">Q{num}</span>'
+            f'<h2>{escape(s.get("title", ""))}</h2></div>'
+            f'<div class="a"><span class="badge badge-a">A</span><p>{escape(s.get("body", ""))}</p></div></div>')
+
+
+def _compare_inner(s: dict) -> str:
+    cmp = s.get("compare") or {"left": {}, "right": {}}
+    def col(side: dict, cls: str) -> str:
+        pts = "".join(f"<li>{escape(p)}</li>" for p in side.get("points", []))
+        return f'<div class="col {cls}"><div class="col-label">{escape(side.get("label", ""))}</div><ul>{pts}</ul></div>'
+    return (f'<div class="text"><h2>{escape(s.get("title", ""))}</h2>'
+            f'<div class="cols">{col(cmp.get("left", {}), "left")}<div class="vs">vs</div>{col(cmp.get("right", {}), "right")}</div></div>')
+
+
 def build_pages(script: dict, images: list[str | None], source: str) -> list[str]:
-    """images[i]는 i번째 장(0=표지)의 배경 파일명. stat 장과 단색 강등 장은 None."""
+    """images[i]는 i번째 장(0=표지)의 배경 파일명. 사진 없는 장(stat/list/term/qa/compare)과 단색 강등 장은 None."""
     slides = script["slides"]
     total = 2 + len(slides)
     # 강조 줄은 형광펜(mark)으로. 글자색 노랑(구 템플릿)은 종이 배경에서 대비가 안 나와 쓰지 않는다
@@ -64,11 +91,21 @@ def build_pages(script: dict, images: list[str | None], source: str) -> list[str
     pages = [_page(f'<div class="text">{lines}<div class="handle">{HANDLE}</div></div>',
                    images[0], "cover", source, f"1/{total}")]
     for i, s in enumerate(slides, start=2):
-        if s.get("slide_type") == "stat" and s.get("stat"):
+        kind = s.get("slide_type", "photo")
+        num = f"{i - 1:02d}"
+        if kind == "stat" and s.get("stat"):
             pages.append(_page(_stat_inner(s["stat"]), None, "stat", source, f"{i}/{total}"))
+        elif kind == "list":
+            pages.append(_page(_list_inner(num, s), None, "list", source, f"{i}/{total}"))
+        elif kind == "term":
+            pages.append(_page(_term_inner(s), None, "term", source, f"{i}/{total}"))
+        elif kind == "qa":
+            pages.append(_page(_qa_inner(str(i - 1), s), None, "qa", source, f"{i}/{total}"))
+        elif kind == "compare" and s.get("compare"):
+            pages.append(_page(_compare_inner(s), None, "compare", source, f"{i}/{total}"))
         else:
             inner = f'<div class="text"><h2>{escape(s["title"])}</h2><p>{escape(s["body"])}</p></div>'
-            pages.append(_page(inner, images[i - 1], "slide", source, f"{i}/{total}", num=f"{i - 1:02d}"))
+            pages.append(_page(inner, images[i - 1], "slide", source, f"{i}/{total}", num=num))
     o = script["outro"]
     inner = (f'<div class="text"><div class="kicker">오늘의 핵심</div>'
              f'<div class="summary">{escape(o["summary"])}</div>'
@@ -129,7 +166,7 @@ def _contrast_dark_text(bg_png: str, text_lum: float) -> float:
 
 
 def _kind(doc: str) -> str:
-    for k in ("cover", "stat", "outro", "slide"):
+    for k in ("cover", "stat", "outro", "list", "term", "qa", "compare", "slide"):
         if f'<body class="{k}' in doc:
             return k
     return "slide"
@@ -160,7 +197,7 @@ def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
             box = page.evaluate(LAYOUT_JS)
             issues = []
             contrast = None
-            if kind != "stat":
+            if kind not in ("stat", "list", "term", "qa", "compare"):   # 단색 배경 장은 대비 측정 생략
                 page.evaluate("document.body.classList.add('notext')")
                 bg_png = os.path.join(out_dir, f".bg_text_{n:02d}.png")
                 page.screenshot(path=bg_png, clip={"x": box["x"], "y": box["y"],

@@ -41,16 +41,16 @@ def ensure_body(db: Database, row, fetcher: Callable[[str], dict] = fetch) -> di
 
 
 def draft_one(db: Database, row, fetcher: Callable[[str], dict] = fetch,
-              write: Callable = writer.write) -> tuple[dict, list[str], dict]:
+              write: Callable = writer.write, fmt: str | None = None) -> tuple[dict, list[str], dict]:
     article = ensure_body(db, row, fetcher)
-    script = write(article)
+    script = write(article, fmt=fmt) if fmt else write(article)
     usage = dict(script.get("_usage") or {})
     errors = validate.check(script, article["body"])
     usage["first_pass_errors"] = list(errors)   # 재작성을 부른 1차 오류 (프롬프트 튜닝 근거)
     for _ in range(MAX_REWRITES):
         if not errors:
             break
-        script = write(article, script, errors)
+        script = write(article, script, errors, fmt=fmt) if fmt else write(article, script, errors)
         u = script.get("_usage") or {}
         usage["input_tokens"] = usage.get("input_tokens", 0) + u.get("input_tokens", 0)
         usage["output_tokens"] = usage.get("output_tokens", 0) + u.get("output_tokens", 0)
@@ -61,13 +61,13 @@ def draft_one(db: Database, row, fetcher: Callable[[str], dict] = fetch,
 
 
 def draft_top(db: Database, top: int, fetcher: Callable[[str], dict] = fetch, write: Callable = writer.write,
-              progress: Callable[[str], None] | None = None) -> DraftReport:
+              progress: Callable[[str], None] | None = None, fmt: str | None = None) -> DraftReport:
     report = DraftReport()
     for row in db.draft_candidates(top):
         if progress:
             progress(f"{row['id']} {row['title'][:40]}")
         try:
-            script, errors, usage = draft_one(db, row, fetcher, write)
+            script, errors, usage = draft_one(db, row, fetcher, write, fmt=fmt)
         except (ArticleError, writer.WriterError) as exc:
             log.error("%s 원고 실패: %s", row["id"], exc)
             db.update_review(row["id"], None, f"원고 실패: {str(exc)[:100]}", None, None)

@@ -87,6 +87,19 @@ Haiku 판정은 `ANTHROPIC_API_KEY`가 있을 때만 켜지고, 없으면 경계
 python -m pytest -q
 ```
 
+## 구성 템플릿 6종 (`docs/TEMPLATES.md`)
+
+writer 가 기사 성격에 따라 `format` 을 고른다(`draft --format qa` 로 강제 가능). 모두 6장. 샘플 렌더: `cardnews/samples.py`.
+
+| format | 구성 | 사진 |
+|---|---|---|
+| explainer 설명형 | 무슨 일 → 왜 중요 → 맥락·숫자 → 전망 | 3~4장 |
+| listicle 나열형 | 01~04 장당 한 항목 | 표지만 |
+| numbers 수치형 | 큰 숫자 + 해석 × 4 | 표지만 |
+| term 용어해설 | 단어·정의·비유 → 왜 등장 → 쓰임 → 변화 | 2~3장 |
+| qa 문답형 | Q1 무슨 일 → Q2 내 영향 → Q3 왜 → Q4 언제부터 | 표지만 |
+| compare 비교형 | 비교 축 3장(2열) → 결론 | 표지 + 결론 |
+
 ## 원고 생성 → 엑셀 '원고'·'본문' 시트 (사람이 고친 문구가 최종)
 
 ```bash
@@ -143,6 +156,7 @@ python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용
 | `rerender.py` | meta의 장별 배경(stat·단색 포함) 그대로 재렌더, 구 meta 포맷 호환 |
 | `writer.py` | 스키마 확장(`slide_type`/`stat`/`image_queries`/`image_concept`)과 그에 맞춘 프롬프트, 펜스·설명이 섞인 응답 파싱, 구조 검증, `_usage` 토큰 기록, effort=medium, `pick_photo`는 호환용(비전 검수로 대체) |
 | `validate.py` | 수치 대조를 '숫자+단위'로(원본은 '5'가 '55%'에 묻힘), 조사 제거, stat 규칙(value+unit ⊂ 인용 ⊂ 원문, 최대 2장, 연속 금지, 2장은 photo), 검색어 2개·영어·브랜드 단어 금지, 캡션 출처 줄, 해시태그 수 |
+| `samples.py` | 구성 템플릿 6종 샘플 원고 + 일괄 렌더 |
 | `make_batch.py` (신규, 로드맵 2단계) | 엑셀 반입 → `승인` 행을 점수순으로 `--limit`건 제작 → 성공 `제작완료`+카드폴더, 실패는 `승인` 유지+메모 → 엑셀 재생성. `--dry-run`으로 대상만 확인 |
 
 writer 스키마(신): 장마다 `slide_type: "photo"|"stat"`, `stat: {value, unit, label, source_quote} | null`,

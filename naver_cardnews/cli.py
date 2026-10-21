@@ -28,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("command", choices=["run", "collect", "draft", "export", "import", "stats", "pick-image", "stat-card"])
     p.add_argument("--top", type=int, help="draft: 원고를 만들 상위 건수 (기본 NAVER_CARDNEWS_DRAFT_TOP=10, run 에서는 0이면 생략)")
     p.add_argument("--no-sections", action="store_true", help="섹션 페이지 크롤링 끄기")
+    p.add_argument("--format", choices=["auto", "explainer", "listicle", "numbers", "term", "qa", "compare"], default="auto",
+                   help="draft: 구성 템플릿 강제 (기본 auto = 모델이 기사 성격으로 선택)")
     p.add_argument("--keywords", type=Path, help="키워드 YAML (기본 keywords.yaml)")
     p.add_argument("--db", type=Path)
     p.add_argument("--out", type=Path, help="엑셀 경로")
@@ -103,7 +105,8 @@ def main(argv: list[str] | None = None) -> int:
                 from . import writer
                 from .draft import draft_top
                 writer.configure(s.anthropic_api_key)
-                rep = draft_top(db, s.draft_top, progress=lambda t: print("  원고:", t, file=sys.stderr))
+                rep = draft_top(db, s.draft_top, progress=lambda t: print("  원고:", t, file=sys.stderr),
+                                fmt=None if args.format == "auto" else args.format)
                 print(rep.summary())
         if args.command in ("run", "export"):
             n = export_queue(db, s.output_path)

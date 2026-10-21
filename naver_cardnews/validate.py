@@ -17,6 +17,16 @@ from .stat_card import Stat, StatError, validate_stat
 
 LIMITS = {"cover_line": 12, "title": 14, "body": (80, 125), "summary": (20, 45), "question": 30,
           "hashtags": (8, 10), "image_concept": 40, "caption": 400}
+# slide_type 별 제목·본문 한도 (writer 프롬프트와 약간 여유를 둔다)
+TYPE_LIMITS = {
+    "photo":   {"title": 14, "body": (80, 125)},
+    "stat":    {"title": 14, "body": (0, 125)},
+    "list":    {"title": 14, "body": (50, 115)},
+    "term":    {"title": 10, "body": (50, 115), "label": 32},
+    "qa":      {"title": 32, "body": (50, 125)},
+    "compare": {"title": 14, "body": (0, 125), "cmp_label": 8, "points": (2, 3), "point": 24},
+}
+NO_PHOTO_TYPES = {"list", "term", "qa", "compare", "stat"}
 NUM_UNIT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([가-힣%a-zA-Z]{0,3})")
 HANJA = re.compile(r"[一-鿿]")
 YEAR = re.compile(r"^(19|20)\d{2}$")
@@ -39,8 +49,14 @@ def _texts(script: dict):
     for i, s in enumerate(script["slides"], start=2):
         yield f"{i}장 제목", s.get("title", "")
         yield f"{i}장 본문", s.get("body", "")
+        if s.get("label"):
+            yield f"{i}장 정의", s["label"]
         if s.get("slide_type") == "stat" and s.get("stat"):
             yield f"{i}장 stat label", s["stat"].get("label", "")
+        if s.get("slide_type") == "compare" and s.get("compare"):
+            for side in ("left", "right"):
+                for p in (s["compare"].get(side) or {}).get("points", []):
+                    yield f"{i}장 비교({side})", p
     yield "마무리 요약", script["outro"]["summary"]
     yield "마무리 질문", script["outro"]["question"]
     yield "캡션", script.get("caption", "")
@@ -96,18 +112,37 @@ def check(script: dict, article_body: str) -> list[str]:
         errors.append("표지에 강조(highlight) 줄 없음")
     errors += check_queries("표지", script["cover"])
 
-    lo, hi = LIMITS["body"]
+    fmt = script.get("format", "explainer")
     stat_count, prev_stat = 0, False
     for i, s in enumerate(script["slides"], start=2):
-        is_stat = s.get("slide_type") == "stat" and bool(s.get("stat"))
-        if len(s.get("title", "")) > LIMITS["title"]:
-            errors.append(f"{i}장 제목 {len(s['title'])}자 > {LIMITS['title']}자")
+        kind = s.get("slide_type", "photo")
+        is_stat = kind == "stat" and bool(s.get("stat"))
+        tl = TYPE_LIMITS.get(kind, TYPE_LIMITS["photo"])
+        if len(s.get("title", "")) > tl["title"]:
+            errors.append(f"{i}장 제목 {len(s['title'])}자 > {tl['title']}자 ({kind})")
+        lo, hi = tl["body"]
         blen = len(s.get("body", ""))
-        if is_stat:
-            if blen > hi:
-                errors.append(f"{i}장 본문 {blen}자 > {hi}자")
-        elif not lo <= blen <= hi:
-            errors.append(f"{i}장 본문 {blen}자 (허용 {lo}~{hi}자)")
+        if not lo <= blen <= hi:
+            errors.append(f"{i}장 본문 {blen}자 (허용 {lo}~{hi}자, {kind})")
+        if kind == "term":
+            if not s.get("label"):
+                errors.append(f"{i}장 term: 한 줄 정의(label) 필요")
+            elif len(s["label"]) > tl["label"]:
+                errors.append(f"{i}장 정의 {len(s['label'])}자 > {tl['label']}자")
+        if kind == "qa" and not s.get("title", "").rstrip().endswith("?"):
+            errors.append(f"{i}장 qa: 질문은 물음표로 끝나야 함")
+        if kind == "compare":
+            cmp = s.get("compare") or {}
+            for side in ("left", "right"):
+                side_d = cmp.get(side) or {}
+                if len(side_d.get("label", "")) > tl["cmp_label"] or not side_d.get("label"):
+                    errors.append(f"{i}장 비교 {side} 라벨 1~{tl['cmp_label']}자 필요")
+                pts = side_d.get("points") or []
+                if not tl["points"][0] <= len(pts) <= tl["points"][1]:
+                    errors.append(f"{i}장 비교 {side} 포인트 {len(pts)}개 (허용 {tl['points'][0]}~{tl['points'][1]})")
+                for p in pts:
+                    if len(p) > tl["point"]:
+                        errors.append(f"{i}장 비교 포인트 '{p[:12]}…' {len(p)}자 > {tl['point']}자")
         if is_stat:
             st = s["stat"]
             try:
@@ -115,14 +150,15 @@ def check(script: dict, article_body: str) -> list[str]:
                                    st.get("source_quote", "")), article_text=article_body)
             except StatError as exc:
                 errors.append(f"{i}장 stat: {exc}")
-            if i == 2:
-                errors.append("2장(표지 다음)은 photo 여야 함")
-            if prev_stat:
-                errors.append(f"{i}장: stat 연속 금지")
-            stat_count += 1
-            if stat_count > MAX_STAT:
-                errors.append(f"{i}장: stat 장 {MAX_STAT}장 초과")
-        else:
+            if fmt != "numbers":
+                if i == 2:
+                    errors.append("2장(표지 다음)은 photo 여야 함")
+                if prev_stat:
+                    errors.append(f"{i}장: stat 연속 금지")
+                stat_count += 1
+                if stat_count > MAX_STAT:
+                    errors.append(f"{i}장: stat 장 {MAX_STAT}장 초과")
+        elif kind == "photo":
             errors += check_queries(f"{i}장", s)
         prev_stat = is_stat
 

@@ -79,3 +79,48 @@ body.outro .question { font-size: 40px; line-height: 1.45; color: var(--ink); ma
 body.outro .cta { display: flex; gap: 16px; margin-bottom: 40px; }
 body.outro .cta span { padding: 16px 30px; border: 3px solid var(--ink); border-radius: 999px; font-size: 30px; font-weight: 700; }
 body.outro .source { color: var(--ink); opacity: .7; }
+
+
+/* ---------- 구성 템플릿별 장 (사진 없음, 종이 배경) ---------- */
+/* 나열형: 큰 번호 + 제목 + 본문 */
+body.list .text { position: absolute; left: var(--m); right: var(--m); top: 200px; }
+body.list .list-num { font-size: 200px; font-weight: 800; line-height: .85; letter-spacing: -0.06em; color: var(--ink);
+                      margin-bottom: 36px; }
+body.list .list-num::after { content: ""; display: block; width: 120px; height: 14px; background: var(--hl); margin-top: 22px; }
+body.list h2 { margin: 0 0 24px; font-size: 68px; font-weight: 800; line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
+body.list p { margin: 0; font-size: 38px; line-height: 1.55; color: var(--ink-2); word-break: keep-all; }
+
+/* 용어해설: 단어 크게(형광펜) + 정의 + 비유 */
+body.term .text { position: absolute; left: var(--m); right: var(--m); top: 220px; }
+body.term .kicker { font-size: 28px; font-weight: 800; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 28px; }
+body.term .term { font-size: 112px; font-weight: 800; line-height: 1.15; letter-spacing: -0.04em; margin-bottom: 40px; word-break: keep-all; }
+body.term .definition { font-size: 44px; font-weight: 700; line-height: 1.35; margin-bottom: 36px; word-break: keep-all;
+                        padding-left: 24px; border-left: 8px solid var(--ink); }
+body.term p { margin: 0; font-size: 36px; line-height: 1.55; color: var(--ink-2); word-break: keep-all; }
+
+/* 문답형: Q 카드 위, A 아래 */
+body.qa .text { position: absolute; left: var(--m); right: var(--m); top: 200px; }
+body.qa .badge { display: inline-block; font-size: 26px; font-weight: 800; padding: 8px 16px; border-radius: 10px;
+                 background: var(--ink); color: var(--paper); margin-bottom: 22px; letter-spacing: .04em; }
+body.qa .badge-a { background: var(--hl); color: var(--ink); }
+body.qa .q h2 { margin: 0 0 56px; font-size: 64px; font-weight: 800; line-height: 1.22; letter-spacing: -0.03em; word-break: keep-all; }
+body.qa .a { padding: 40px 44px; background: var(--paper-2); border-radius: 28px; }
+body.qa .a p { margin: 0; font-size: 36px; line-height: 1.55; color: var(--ink); word-break: keep-all; }
+
+/* 비교형: 2열 */
+body.compare .text { position: absolute; left: var(--m); right: var(--m); top: 180px; }
+body.compare h2 { margin: 0 0 40px; font-size: 60px; font-weight: 800; letter-spacing: -0.03em; }
+body.compare .cols { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+body.compare .col { border-radius: 28px; padding: 36px 32px 40px; min-height: 620px; }
+body.compare .col.left  { background: var(--paper-2); box-shadow: 0 0 0 2px var(--ink); }
+body.compare .col.right { background: var(--ink); color: var(--paper); }
+body.compare .col-label { font-size: 30px; font-weight: 800; letter-spacing: .02em; margin-bottom: 28px; padding-bottom: 18px;
+                          border-bottom: 3px solid currentColor; }
+body.compare .col.right .col-label { color: var(--hl); border-color: var(--hl); }
+body.compare ul { margin: 0; padding: 0; list-style: none; }
+body.compare li { font-size: 32px; line-height: 1.4; margin-bottom: 26px; padding-left: 30px; position: relative; word-break: keep-all; }
+body.compare li::before { content: ""; position: absolute; left: 0; top: 16px; width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
+body.compare .col.right li::before { background: var(--hl); }
+body.compare .vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 84px; height: 84px; border-radius: 50%;
+                   background: var(--hl); color: var(--ink); font-size: 28px; font-weight: 800; display: flex; align-items: center;
+                   justify-content: center; box-shadow: 0 0 0 4px var(--paper); }
