@@ -8,7 +8,7 @@ HANDOFF.md 5장 설계를 구현한 것이다. 네이버 뉴스 검색 API로 �
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env         # keys.txt의 [Naver-cardnews] 값을 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET에
+cp .env.example .env         # 네이버 개발자센터에서 발급한 값을 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET에
 python -m naver_cardnews run # import(엑셀→DB) → collect → export(DB→엑셀)
 ```
 
