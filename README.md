@@ -111,6 +111,24 @@ python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용
 `.env`: `PEXELS_API_KEY`(필수), `UNSPLASH_ACCESS_KEY`(선택), `ANTHROPIC_API_KEY`(비전 검수). 숫자 카드는 Pretendard 폰트가
 설치돼 있어야 하고(없으면 시스템 고딕으로 대체), Chromium 경로가 다르면 `CHROMIUM_PATH`로 지정한다.
 
+## `cardnews/` — 로컬 프로젝트 파일 개선본
+
+로컬 naver-cardnews 프로젝트의 `make_card.py`, `naver_article.py`, `pexels.py`, `render.py`, `rerender.py`를 분석해
+같은 이름으로 개선본을 두었다(`keys.py`는 keys.txt/.env 로더). 로컬 프로젝트 루트에 **이 다섯 파일과 `keys.py`를 복사**하고,
+`templates/card_stat.css`를 로컬 `templates/`에 추가하면 된다. `writer.py`, `validate.py`, `templates/card.css`는 로컬 것을 그대로 쓴다
+(이 저장소의 `templates/card.css`는 테스트용 스텁). 이 저장소를 `pip install -e .` 하거나 `PYTHONPATH`에 넣어 `naver_cardnews`를 import 할 수 있어야 한다.
+
+| 파일 | 바뀐 점 |
+|---|---|
+| `make_card.py` | stat 장 분기(검증 실패 시 photo 강등, 최대 2장·연속 금지), 비전 검수로 사진 선택, used_images로 게시물 간 재사용 금지, 후보 전무 시 재검색 → 단색 강등(원본은 IndexError), 검수 실패 원고는 렌더하지 않음, meta.json에 비전 판정 기록, `articles.status='제작완료'`·`card_folder` 갱신 |
+| `naver_article.py` | 사진 설명·기자 이메일·'무단 전재' 꼬리 제거, 빈 제목/본문이면 예외, og 메타 폴백, 재시도, `id(oid_aid)` 포함 |
+| `pexels.py` | `naver_cardnews.stock` 래퍼. 원본(1350px 이상) 다운로드, 가로·저해상도 제외, 작가당 상한, Unsplash 키 있으면 자동 추가 |
+| `render.py` | `document.fonts.ready`를 실제로 await(원본은 Promise 미대기), stat/plain 장 렌더, 숫자 넘침 자동 축소, 폰트 로딩 상태 QA, Pillow 구 API 회피, `CHROMIUM_PATH` |
+| `rerender.py` | meta의 장별 배경(stat·단색 포함) 그대로 재렌더, 구 meta 포맷 호환 |
+
+writer가 내야 할 추가 필드(선택): 장마다 `slide_type: "photo"|"stat"`, `stat: {value, unit, label, source_quote}`,
+`image_queries: [은유형, 구체형]`(없으면 기존 `image_query`), `image_concept`(한국어 한 줄, 비전 검수 입력).
+
 ## 다음 단계 (HANDOFF 로드맵)
 
 2. 승인 건 일괄 제작: `status='승인'`인 행의 `naver_link`를 `make_card.py`에 넘기고 `카드폴더` 기록

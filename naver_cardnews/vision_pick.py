@@ -21,7 +21,7 @@ SYSTEM = (
     "사진 위에는 하단 1/3에 흰색·노란색 헤드라인이 올라가고 좌상단에 작은 라벨이 붙는다.\n"
     "다음 JSON만 출력한다(설명 금지):\n"
     '{"faces": bool, "text_or_logo": bool, "brand_like": bool, "relevance": 1-5, '
-    '"lower_third_clear": 1-5, "style_match": 1-5, "reason": "한 문장"}\n'
+    '"lower_third_clear": 1-5, "style_match": 1-5, "reason": "40자 이내 한 문장"}\n'
     "- faces: 알아볼 수 있는 사람 얼굴이 있으면 true (뒷모습·실루엣·손만 보이면 false)\n"
     "- text_or_logo: 글자, 숫자, 간판, 로고, 워터마크가 보이면 true\n"
     "- brand_like: 특정 기업 제품·로고·캐릭터가 연상되면 true (예: 애플 제품 디자인, 테슬라 차량)\n"
@@ -78,7 +78,7 @@ class HaikuScorer:
         ]
         try:
             resp = self.client.messages.create(
-                model=self.model, max_tokens=300, system=SYSTEM,
+                model=self.model, max_tokens=600, system=SYSTEM,
                 output_config={"effort": "low"},
                 messages=[{"role": "user", "content": content}],
             )

@@ -1,0 +1,180 @@
+"""Playwright 렌더 + QA.
+
+원본 대비 개선:
+- document.fonts.ready 를 실제로 await (원본은 Promise를 기다리지 않아 폰트 로딩 전 캡처·QA 가능성)
+- 장 유형 분기: cover / slide / stat / outro. stat은 배경 사진 없이 templates/card_stat.css 로 렌더
+- 사진이 없는 장(단색 강등)은 .plain 으로 렌더
+- 대비 측정에 Pillow getdata() 대신 tobytes() (Pillow 14 제거 예정 API 회피), 95퍼센타일 유지
+- Chromium 경로를 CHROMIUM_PATH 로 지정 가능, 캡처 전 150ms 안정화
+- QA 결과에 kind·font 로딩 여부 포함
+"""
+
+from __future__ import annotations
+
+import os
+from html import escape
+
+from PIL import Image
+from playwright.sync_api import sync_playwright
+
+from naver_cardnews.stat_card import len_class
+
+HANDLE = os.environ.get("CARDNEWS_HANDLE", "@your_handle")
+LABEL = "AI로 재가공한 뉴스"
+W, H = 1080, 1350
+GRID_CROP = (W - H * 3 / 4) / 2  # 프로필 그리드 3:4 노출 시 좌우로 잘리는 폭
+MIN_CONTRAST = 4.5               # WCAG 2.x AA 일반 텍스트 기준
+STAT_MAX_QUOTE = 70
+
+
+def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str) -> str:
+    extra_css = '<link rel="stylesheet" href="../../templates/card_stat.css">' if kind == "stat" else ""
+    bg_div = f"""<div class="bg" style="background-image:url('{bg}')"></div>""" if bg else ""
+    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../templates/card.css">{extra_css}</head>
+<body class="{kind}{'' if bg or kind == 'stat' else ' plain'}">
+{bg_div}
+<div class="shade"></div><div class="diag"></div>
+<div class="pill">{LABEL}</div>
+{inner}
+<div class="source">{escape(source)}</div><div class="page">{page_no}</div>
+</body></html>"""
+
+
+def _stat_inner(stat: dict) -> str:
+    value, unit = str(stat["value"]), str(stat.get("unit", ""))
+    quote = stat.get("source_quote", "")
+    if len(quote) > STAT_MAX_QUOTE:
+        quote = quote[:STAT_MAX_QUOTE - 1] + "…"
+    return (f'<div class="text"><div class="value" data-len="{len_class(value, unit)}">'
+            f'<span class="num">{escape(value)}<span class="unit">{escape(unit)}</span></span></div>'
+            f'<div class="stat-label">{escape(stat.get("label", ""))}</div></div>'
+            f'<div class="quote">{escape(quote)}</div>')
+
+
+def build_pages(script: dict, images: list[str | None], source: str) -> list[str]:
+    """images[i]는 i번째 장(0=표지)의 배경 파일명. stat 장과 단색 강등 장은 None."""
+    slides = script["slides"]
+    total = 2 + len(slides)
+    lines = "".join(f'<div class="line{" hl" if l.get("highlight") else ""}">{escape(l["text"])}</div>'
+                    for l in script["cover"]["lines"])
+    pages = [_page(f'<div class="text"><div class="handle">{HANDLE}</div>{lines}</div>',
+                   images[0], "cover", source, f"1/{total}")]
+    for i, s in enumerate(slides, start=2):
+        if s.get("slide_type") == "stat" and s.get("stat"):
+            pages.append(_page(_stat_inner(s["stat"]), None, "stat", source, f"{i}/{total}"))
+        else:
+            inner = f'<div class="text"><h2>{escape(s["title"])}</h2><p>{escape(s["body"])}</p></div>'
+            pages.append(_page(inner, images[i - 1], "slide", source, f"{i}/{total}"))
+    o = script["outro"]
+    inner = (f'<div class="text"><div class="kicker">오늘의 핵심</div>'
+             f'<div class="summary">{escape(o["summary"])}</div>'
+             f'<div class="question">Q. {escape(o["question"])}</div>'
+             f'<div class="cta"><span>저장</span><span>공유</span><span>팔로우</span></div>'
+             f'<div class="handle">{HANDLE}</div></div>')
+    outro_bg = images[-1] if len(images) > len(slides) + 1 and images[-1] else images[0]
+    pages.append(_page(inner, outro_bg, "outro", source, f"{total}/{total}"))
+    return pages
+
+
+LAYOUT_JS = """() => {
+  const box = document.querySelector('.text').getBoundingClientRect();
+  const wrapped = [...document.querySelectorAll('.line, h2')].filter(e => {
+    const lh = parseFloat(getComputedStyle(e).lineHeight);
+    return e.getBoundingClientRect().height > lh * 1.5;
+  }).map(e => e.textContent);
+  const num = document.querySelector('.value .num');
+  return {top: box.top, bottom: box.bottom, left: box.left, right: box.right,
+          x: box.x, y: box.y, w: box.width, h: box.height, wrapped,
+          value_overflow: num ? num.getBoundingClientRect().right > %d - 64 : false,
+          fonts: document.fonts.status};
+}""" % W
+
+SHRINK_JS = """() => {
+  const v = document.querySelector('.value'); if (!v) return null;
+  const n = v.querySelector('.num'); let size = parseFloat(getComputedStyle(v).fontSize);
+  while (n.getBoundingClientRect().right > %d - 64 && size > 160) { size -= 20; v.style.fontSize = size + 'px'; }
+  return size;
+}""" % W
+
+
+def _luminance(rgb):
+    def ch(c):
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def _contrast(bg_png: str, text_lum: float) -> float:
+    """배경의 밝은 쪽 95퍼센타일을 기준으로 가장 불리한 대비를 잰다."""
+    im = Image.open(bg_png).convert("RGB")
+    data = im.tobytes()
+    lums = sorted(_luminance(data[i:i + 3]) for i in range(0, len(data), 3))
+    bg = lums[int(len(lums) * 0.95)]
+    return (text_lum + 0.05) / (bg + 0.05)
+
+
+def _kind(doc: str) -> str:
+    for k in ("cover", "stat", "outro", "slide"):
+        if f'<body class="{k}' in doc:
+            return k
+    return "slide"
+
+
+def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
+    files, qa = [], []
+    launch = {}
+    if os.environ.get("CHROMIUM_PATH"):
+        launch["executable_path"] = os.environ["CHROMIUM_PATH"]
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(**launch)
+        page = browser.new_page(viewport={"width": W, "height": H})
+        for n, doc in enumerate(pages, start=1):
+            kind = _kind(doc)
+            html_path = os.path.join(out_dir, f"card_{n:02d}.html")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(doc)
+            page.goto("file://" + os.path.abspath(html_path))
+            page.evaluate("() => document.fonts.ready")   # Promise를 실제로 기다린다
+            page.wait_for_timeout(150)
+            if kind == "stat":
+                page.evaluate(SHRINK_JS)
+            jpg = os.path.join(out_dir, f"card_{n:02d}.jpg")
+            page.screenshot(path=jpg, type="jpeg", quality=92)
+            files.append(jpg)
+
+            box = page.evaluate(LAYOUT_JS)
+            issues = []
+            contrast = None
+            if kind != "stat":
+                page.evaluate("document.body.classList.add('notext')")
+                bg_png = os.path.join(out_dir, f".bg_text_{n:02d}.png")
+                page.screenshot(path=bg_png, clip={"x": box["x"], "y": box["y"],
+                                                   "width": box["w"], "height": box["h"]})
+                # 표지·마무리는 노란 강조색(#FFE500)이 가장 어두운 글자색이라 그 기준으로 잰다
+                text_lum = _luminance((0xFF, 0xE5, 0x00)) if kind in ("cover", "outro") else 1.0
+                contrast = round(_contrast(bg_png, text_lum), 2)
+                os.remove(bg_png)
+                if kind != "outro" and box["top"] < H * 0.45:
+                    issues.append(f"텍스트가 상단 사진 영역 침범(top={box['top']:.0f}px)")
+                if contrast < MIN_CONTRAST:
+                    issues.append(f"대비 부족 {contrast}:1")
+            else:
+                if box["value_overflow"]:
+                    issues.append("숫자가 카드 폭을 넘음 (160px까지 줄여도 부족)")
+            if box["bottom"] > H - 80:
+                issues.append("텍스트가 출처 줄과 겹침")
+            if box["left"] < GRID_CROP or box["right"] > W - GRID_CROP:
+                issues.append("프로필 그리드(3:4)에서 잘림")
+            if box["wrapped"]:
+                issues.append(f"제목 줄바꿈 발생: {box['wrapped']}")
+            if box["fonts"] != "loaded":
+                issues.append(f"폰트 로딩 상태 {box['fonts']}")
+            size_mb = os.path.getsize(jpg) / 1e6
+            if size_mb > 8:
+                issues.append(f"파일 {size_mb:.1f}MB > 8MB")
+            qa.append({"card": n, "kind": kind, "contrast": contrast, "text_top": round(box["top"]),
+                       "size_mb": round(size_mb, 2), "issues": issues})
+        browser.close()
+    return files, qa

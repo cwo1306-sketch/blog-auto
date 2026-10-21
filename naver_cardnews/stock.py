@@ -49,7 +49,7 @@ class PexelsClient:
 
     def search(self, query: str, per_page: int = 10) -> list[Candidate]:
         resp = self.session.get(self.API, params={"query": query, "orientation": "portrait",
-                                                  "per_page": per_page, "size": "large"}, timeout=15)
+                                                  "per_page": per_page}, timeout=15)
         resp.raise_for_status()
         return [self._parse(p, query) for p in resp.json().get("photos", [])]
 
@@ -59,7 +59,8 @@ class PexelsClient:
         return Candidate(
             source="pexels", external_id=str(p["id"]),
             thumb_url=src.get("medium") or src.get("small") or src.get("original", ""),
-            full_url=src.get("portrait") or src.get("large2x") or src.get("original", ""),
+            # portrait(800×1200)·large2x는 1350px에 못 미친다 → 원본을 받아 render에서 cover-fit
+            full_url=src.get("original") or src.get("large2x") or src.get("portrait", ""),
             width=int(p.get("width", 0)), height=int(p.get("height", 0)),
             alt=p.get("alt") or "", photographer=p.get("photographer") or "",
             page_url=p.get("url") or "", query=query,
@@ -98,9 +99,11 @@ class UnsplashClient:
 
 
 def search_candidates(queries: list[str], clients: list[StockClient], per_query: int = 6,
-                      min_height: int = 1350) -> list[Candidate]:
-    """여러 검색어 × 여러 소스에서 후보를 모아 (소스, id) 기준으로 중복을 없앤다. 검색어 순서를 유지한다."""
+                      min_height: int = 1350, max_per_photographer: int = 2) -> list[Candidate]:
+    """여러 검색어 × 여러 소스에서 후보를 모아 (소스, id) 기준으로 중복을 없앤다. 검색어 순서를 유지한다.
+    같은 작가의 연작이 후보를 독점하지 않게 작가당 max_per_photographer장까지만 남긴다."""
     seen: set[tuple[str, str]] = set()
+    per_author: dict[str, int] = {}
     out: list[Candidate] = []
     for query in queries:
         for client in clients:
@@ -112,6 +115,10 @@ def search_candidates(queries: list[str], clients: list[StockClient], per_query:
             for c in found:
                 if c.key in seen or c.height < min_height or c.height <= c.width:
                     continue
+                author = f"{c.source}:{c.photographer}"
+                if c.photographer and per_author.get(author, 0) >= max_per_photographer:
+                    continue
+                per_author[author] = per_author.get(author, 0) + 1
                 seen.add(c.key)
                 out.append(c)
     return out
