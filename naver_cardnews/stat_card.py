@@ -42,10 +42,13 @@ def validate_stat(stat: Stat, article_text: str | None = None) -> None:
 
 
 def len_class(value: str, unit: str) -> str:
-    n = len(value.replace(",", "")) + (1 if "." in value else 0)
-    if n <= 3:
+    """숫자 글자 수 + 단위 폭(한글 단위는 숫자 1자 폭, 기호는 반 자)으로 크기 단계를 정한다.
+    렌더 때 그래도 넘치면 render_png가 글자 크기를 더 줄인다."""
+    n = len(value.replace(",", "")) + (0.5 if "." in value else 0)
+    n += sum(1.0 if ord(ch) > 0x2E80 else 0.5 for ch in unit.strip())
+    if n <= 3.5:
         return "short"
-    if n <= 5:
+    if n <= 5.5:
         return "medium"
     return "long"
 
@@ -81,10 +84,17 @@ def render_png(stat: Stat, out_path: Path, page_no: int, total: int = 6) -> dict
         page = browser.new_page(viewport={"width": 1080, "height": 1350}, device_scale_factor=1)
         page.goto(html_path.resolve().as_uri())
         page.wait_for_timeout(150)
+        # 폭이 넘치면 160px까지 20px씩 줄인다 (폰트 폭 차이 대비)
+        page.evaluate("""() => {
+            const v = document.querySelector('.value'); const n = v.querySelector('.num');
+            let size = parseFloat(getComputedStyle(v).fontSize);
+            while (n.getBoundingClientRect().right > 1080 - 64 && size > 160) { size -= 20; v.style.fontSize = size + 'px'; }
+        }""")
         qa = page.evaluate("""() => {
             const v = document.querySelector('.value .num'); const r = v.getBoundingClientRect();
             const q = document.querySelector('.quote');
             return {value_overflow: r.right > 1080 - 64, value_width: Math.round(r.width),
+                    font_px: Math.round(parseFloat(getComputedStyle(document.querySelector('.value')).fontSize)),
                     quote_clipped: q.scrollHeight > q.clientHeight + 2};
         }""")
         page.screenshot(path=str(out_path), full_page=False)

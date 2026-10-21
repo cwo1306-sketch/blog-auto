@@ -109,6 +109,7 @@ def test_stat_validation_and_html():
         validate_stat(ok, article_text="전혀 다른 본문"); assert False
     except StatError:
         pass
-    assert (len_class("55", "%"), len_class("34.7", "조원"), len_class("1,000", "조원")) == ("short", "medium", "medium")
+    assert (len_class("55", "%"), len_class("34.7", "조원"), len_class("1,000", "조원")) == ("short", "medium", "long")
+    assert len_class("107", "조원") == "medium" and len_class("8.9", "억개") == "medium"
     h = render_html(ok, 3)
     assert 'data-len="short"' in h and ">55<span class=\"unit\">%</span>" in h and "3/6" in h and "<script" not in h
