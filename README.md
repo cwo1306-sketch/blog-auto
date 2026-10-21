@@ -1,53 +1,57 @@
-# naver-cardnews — 1단계: 뉴스 수집 → SQLite → 엑셀 검토 큐
+# naver-cardnews — 로드맵 1단계: 뉴스 수집 → SQLite → 엑셀 큐 + 4단계 중복 제거
 
-네이버 뉴스 검색 API로 AI·테크 키워드 기사를 모아 SQLite에 쌓고, 4단계 중복 제거를 거친 고유 기사만
-사람이 검토할 엑셀 큐로 내보냅니다. (카드뉴스 자동화 로드맵 1단계)
+HANDOFF.md 5장 설계를 구현한 것이다. 네이버 뉴스 검색 API로 키워드별 기사를 받아 SQLite에 쌓고,
+4단계 중복 제거로 같은 사건을 클러스터로 묶은 뒤, 대표 기사만 `대기` 상태로 엑셀 큐에 올린다.
+사람은 엑셀에서 `상태`를 `승인`으로만 바꾸면 되고, 다음 실행 때 DB로 반영된다(로드맵 2단계가 승인 건만 제작).
 
 ## 설치 / 실행
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 입력
-python -m naver_cardnews run  # 수집 + 엑셀 출력 (data/news.db, data/review_queue.xlsx)
+cp .env.example .env         # keys.txt의 [Naver-cardnews] 값을 NAVER_CLIENT_ID / NAVER_CLIENT_SECRET에
+python -m naver_cardnews run # import(엑셀→DB) → collect → export(DB→엑셀)
 ```
 
 | 명령 | 역할 |
 |---|---|
-| `collect` | keywords.yaml의 모든 키워드를 검색해 SQLite에 저장 (중복 판정 포함) |
-| `export` | 검토 대기(`pending`) 고유 기사를 엑셀로 출력. `--mark-exported`를 주면 다음 큐에서 제외 |
-| `run` | collect + export |
-| `stats` | 단계별 중복 수, 검토 대기 수 |
+| `run` | 평소에 쓰는 명령. 엑셀의 승인 값을 DB로 읽고, 수집하고, 엑셀을 다시 만든다 |
+| `collect` (`python collect.py`) | 수집 + 중복 제거 → `data/news.db` |
+| `export` | DB → `data/news_queue.xlsx` 재생성 (이전 파일은 `data/backups/`에 보관) |
+| `import` | 엑셀의 상태·카드폴더·게시URL·메모 → DB |
+| `stats` | 상태별 건수, 클러스터 수 |
 
-옵션: `--keywords 파일`, `--db 경로`, `--out 경로`, `--per-keyword N`(키워드당 최대 1000), `--days N`(수집 기간, 기본 3일).
+`python newsqueue.py`는 `run`과 같다(`queue.py`는 표준 라이브러리 이름이라 피했다).
+옵션: `--keywords`, `--db`, `--out`, `--per-keyword N`(≤1000), `--days N`(기본 3), `--no-judge`.
 
-## 키워드
+## 수집 규칙 (`naver_cardnews/collect.py`)
 
-`keywords.yaml`의 `groups:` 아래에 그룹명 → 키워드 목록으로 적습니다. 그룹명은 엑셀의 "키워드 그룹" 열에
-들어가 필터용으로 씁니다. 현재 파일은 AI·테크 초안입니다.
+- `news.json`, `sort=date`, `display=100`, 키워드별 호출. 키워드는 `keywords.yaml`.
+- `link`가 `n.news.naver.com`인 것만 채택 (본문 파서 `naver_article.py`가 동작하는 범위). 나머지는 버린다.
+- `title`/`description`의 `<b>` 태그·HTML 엔티티 제거.
+- `id`는 네이버 `oid_aid`. 언론사는 `originallink` 도메인.
 
 ## 4단계 중복 제거 (`naver_cardnews/dedup.py`)
 
-| 단계 | 기준 | 잡아내는 경우 |
+| 단계 | 기준 | 결과 |
 |---|---|---|
-| 1 | 정규화 URL 일치 (추적 파라미터·모바일 도메인·http/https 통일) | 같은 기사를 다른 키워드로 다시 받음 → 저장하지 않음 |
-| 2 | 정규화 제목 일치 (`[속보]` 머리말, 매체명 꼬리, 기호 제거) | 재송고, 포털 재게시 |
-| 3 | 제목 2-gram 자카드 유사도 ≥ 0.80 | 통신사 기사 받아쓰기, 어미만 바꾼 제목 |
-| 4 | 요약문 SimHash(63비트) 해밍 거리 ≤ 6 | 제목은 달라도 내용이 같은 기사. 요약이 짧으면(토큰 < 15) 건너뜀 |
+| 1 | `oid_aid` 완전 일치 | 저장하지 않음. 걸린 키워드만 `키워드` 열에 추가 |
+| 2 | 정규화 제목 일치 (`[단독]`·`[속보]`·괄호·특수문자·공백 제거, 72시간 창) | 같은 클러스터, `제외` |
+| 3 | 제목+요약 문자 2-gram Jaccard ≥ **0.5**, 72시간 창 → `cluster_id` 부여, 대표 1건만 `대기` | 같은 클러스터, `제외`. 0.35~0.5 경계는 Claude Haiku(`claude-haiku-5-5`)에게 "같은 사건인가?" 판정 |
+| 4 | 최근 14일 `게시완료` 건과 같은 방식 비교 | `제외`, 중복사유 `기게시(...)` |
 
-2~4단계 중복은 버리지 않고 `dedup_stage`, `duplicate_of`로 원본에 묶어 저장합니다. 엑셀의 "중복 수" 열이
-이 묶음 크기이며, 여러 매체가 다룬 기사일수록 커지므로 화제성 신호로 씁니다. 3·4단계 비교는 최근 N일의
-고유 기사하고만 합니다.
+`점수` = 클러스터 안의 언론사 수(여러 언론이 다룬 이슈 = 중요도). 임계값은 `.env`의
+`NAVER_CARDNEWS_SIM_THRESHOLD` / `NAVER_CARDNEWS_SIM_BORDERLINE`로 조정한다(실측 후 조정 예정).
+Haiku 판정은 `ANTHROPIC_API_KEY`가 있을 때만 켜지고, 없으면 경계 구간은 '다름'으로 둔다.
 
-## 엑셀 검토 큐
+## 엑셀 큐 (`naver_cardnews/queue.py`)
 
-시트 "검토 큐": ID · 선택(O/X/보류 드롭다운) · 키워드 그룹 · 키워드 · 발행 시각(KST) · 매체 · 제목 · 요약 ·
-중복 수 · 원문 링크 · 네이버 링크 · 메모. 시트 "요약": 생성 시각과 단계별 중복 통계.
-"선택" 열은 2단계(검토 결과 반영 → 카드뉴스 생성) 입력으로 쓰도록 비워 둡니다.
+시트 `뉴스큐` 컬럼: `id(oid_aid)` · 수집일시 · 키워드 · 제목 · 언론사 · 발행일시 · naver_link · originallink ·
+요약 · 정규화제목 · cluster_id · 대표여부 · 중복사유 · 점수 · 상태(대기/승인/제작완료/게시완료/제외) ·
+카드폴더 · 게시URL · 메모. 노란 열(상태·카드폴더·게시URL·메모)만 사람이 편집한다.
+제외 행도 회색으로 함께 내보내 클러스터를 확인할 수 있게 했다.
 
-## DB 스키마 (`naver_cardnews/db.py`)
-
-`articles`: 기사 본문 메타 + `dedup_stage`(0=고유) + `duplicate_of` + `review_status`
-(`pending`/`approved`/`rejected`/`exported`). `collect_runs`: 실행 로그.
+- 원본은 SQLite, 엑셀은 매 실행 때 재생성. 승인 값은 엑셀 → DB로 읽어온다.
+- 엑셀이 열려 있으면(`~$news_queue.xlsx` 존재) 쓰지 않고 중단한다. 저장 전 `data/backups/`에 백업(최근 10개).
 
 ## 테스트
 
@@ -55,11 +59,7 @@ python -m naver_cardnews run  # 수집 + 엑셀 출력 (data/news.db, data/revie
 python -m pytest -q
 ```
 
-## 1단계 구현 시 가정 (HANDOFF.md 미확인)
+## 다음 단계 (HANDOFF 로드맵)
 
-이 구현은 HANDOFF.md 원문을 읽지 못한 상태에서 작성했습니다. 아래는 문서와 다를 수 있는 가정입니다.
-
-- 수집 소스는 네이버 **뉴스 검색 API**(`openapi.naver.com/v1/search/news.json`), 크롤링이 아님.
-- "4단계 중복 제거"는 위 표의 URL → 제목 일치 → 제목 유사 → 본문 지문 순서로 정의.
-- 키워드 초안은 `keywords.yaml`의 AI·테크 목록. 문서의 초안이 있으면 이 파일만 교체하면 됨.
-- 수집 기간 기본 3일, 키워드당 최대 100건.
+2. 승인 건 일괄 제작: `status='승인'`인 행의 `naver_link`를 `make_card.py`에 넘기고 `카드폴더` 기록
+3. 숫자 카드 템플릿 + `used_photos` + 비전 사진 선택

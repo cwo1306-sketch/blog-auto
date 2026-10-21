@@ -21,9 +21,8 @@ def _load_dotenv(path: Path) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and value and key not in os.environ:
             os.environ[key] = value
 
 
@@ -33,50 +32,51 @@ class Settings:
     client_secret: str
     db_path: Path
     output_path: Path
+    keywords: list[str] = field(default_factory=list)
     keywords_file: Path = DEFAULT_KEYWORDS_FILE
-    # 키워드당 요청할 최대 기사 수 (네이버 API: display 최대 100, start 최대 1000)
-    per_keyword: int = 100
-    # 수집 대상 기간(일). 이보다 오래된 기사는 저장하지 않는다.
-    max_age_days: int = 3
-    # 요청 간 대기(초). 네이버 검색 API 일일 25,000건 제한을 고려한 완충.
+    per_keyword: int = 100          # 네이버 API display 최대 100
+    max_age_days: int = 3           # 이보다 오래된 기사는 저장하지 않는다
     request_interval: float = 0.2
-    keyword_groups: dict[str, list[str]] = field(default_factory=dict)
-
-    @property
-    def keywords(self) -> list[tuple[str, str]]:
-        """(그룹, 키워드) 목록. 중복 키워드는 첫 그룹만 남긴다."""
-        seen: set[str] = set()
-        out: list[tuple[str, str]] = []
-        for group, words in self.keyword_groups.items():
-            for word in words:
-                if word in seen:
-                    continue
-                seen.add(word)
-                out.append((group, word))
-        return out
+    # 3단계 근접 중복: 제목+요약 문자 2-gram Jaccard
+    sim_threshold: float = 0.5      # 이상이면 같은 사건 (시작값, 실측으로 조정)
+    sim_borderline: float = 0.35    # 이상~threshold 미만이면 Haiku 판정
+    cluster_window_hours: int = 72
+    # 4단계 기게시 비교 기간(일)
+    posted_window_days: int = 14
+    judge_enabled: bool = True
+    anthropic_api_key: str = ""
 
 
-def load_keywords(path: Path) -> dict[str, list[str]]:
+def load_keywords(path: Path) -> list[str]:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    groups = data.get("groups") or {}
-    if not isinstance(groups, dict):
-        raise ValueError(f"{path}: 'groups'는 그룹명 → 키워드 목록 형태여야 합니다.")
-    cleaned: dict[str, list[str]] = {}
-    for group, words in groups.items():
-        cleaned[str(group)] = [str(w).strip() for w in (words or []) if str(w).strip()]
-    return cleaned
+    words = data.get("keywords")
+    if isinstance(words, dict):  # 그룹 형태도 허용
+        words = [w for group in words.values() for w in (group or [])]
+    if not isinstance(words, list):
+        raise ValueError(f"{path}: 'keywords'는 목록이어야 합니다.")
+    out: list[str] = []
+    for w in words:
+        w = str(w).strip()
+        if w and w not in out:
+            out.append(w)
+    return out
 
 
 def load_settings(env_file: Path | None = None, keywords_file: Path | None = None) -> Settings:
     _load_dotenv(env_file or PROJECT_ROOT / ".env")
-    kw_file = keywords_file or Path(os.environ.get("NAVER_CARDNEWS_KEYWORDS", DEFAULT_KEYWORDS_FILE))
+    env = os.environ.get
+    kw_file = keywords_file or Path(env("NAVER_CARDNEWS_KEYWORDS", DEFAULT_KEYWORDS_FILE))
     return Settings(
-        client_id=os.environ.get("NAVER_CLIENT_ID", ""),
-        client_secret=os.environ.get("NAVER_CLIENT_SECRET", ""),
-        db_path=Path(os.environ.get("NAVER_CARDNEWS_DB", PROJECT_ROOT / "data" / "news.db")),
-        output_path=Path(os.environ.get("NAVER_CARDNEWS_OUT", PROJECT_ROOT / "data" / "review_queue.xlsx")),
+        client_id=env("NAVER_CLIENT_ID", ""),
+        client_secret=env("NAVER_CLIENT_SECRET", ""),
+        db_path=Path(env("NAVER_CARDNEWS_DB", PROJECT_ROOT / "data" / "news.db")),
+        output_path=Path(env("NAVER_CARDNEWS_OUT", PROJECT_ROOT / "data" / "news_queue.xlsx")),
+        keywords=load_keywords(kw_file),
         keywords_file=kw_file,
-        per_keyword=int(os.environ.get("NAVER_CARDNEWS_PER_KEYWORD", "100")),
-        max_age_days=int(os.environ.get("NAVER_CARDNEWS_MAX_AGE_DAYS", "3")),
-        keyword_groups=load_keywords(kw_file),
+        per_keyword=int(env("NAVER_CARDNEWS_PER_KEYWORD", "100")),
+        max_age_days=int(env("NAVER_CARDNEWS_MAX_AGE_DAYS", "3")),
+        sim_threshold=float(env("NAVER_CARDNEWS_SIM_THRESHOLD", "0.5")),
+        sim_borderline=float(env("NAVER_CARDNEWS_SIM_BORDERLINE", "0.35")),
+        judge_enabled=env("NAVER_CARDNEWS_JUDGE", "on").lower() not in ("off", "0", "false", "no"),
+        anthropic_api_key=env("ANTHROPIC_API_KEY", ""),
     )

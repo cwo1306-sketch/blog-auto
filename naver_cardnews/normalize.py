@@ -1,24 +1,19 @@
-"""URL·제목·본문 정규화. 중복 제거의 모든 단계가 이 함수들에 의존한다."""
+"""URL·제목·요약 정규화. 중복 제거의 모든 단계가 이 함수들에 의존한다."""
 
 from __future__ import annotations
 
 import html
 import re
 import unicodedata
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 _TAG_RE = re.compile(r"<[^>]+>")
-# [속보], (종합), 【단독】 같은 머리말 꼬리말
-_BRACKET_RE = re.compile(r"[\[\(【<][^\]\)】>]{1,12}[\]\)】>]")
+# [속보], (종합), 【단독】 같은 머리말·꼬리말과 괄호 안 짧은 주석
+_BRACKET_RE = re.compile(r"[\[\(【<][^\]\)】>]{1,15}[\]\)】>]")
 # "…ㅣ뉴스1", " - 연합뉴스", " | 조선일보" 같은 매체명 꼬리
 _SOURCE_SUFFIX_RE = re.compile(r"\s*[\|ㅣ\-–—]\s*[\w가-힣\s]{2,15}$")
 _NON_WORD_RE = re.compile(r"[^0-9a-z가-힣]+")
-
-# 광고·추적 파라미터. 기사 식별에 쓰이는 파라미터(oid/aid/sid 등)는 남긴다.
-_TRACKING_PARAMS = {
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
-    "fbclid", "gclid", "igshid", "ref", "from", "source", "cds", "trackingcode",
-}
+_NAVER_ARTICLE_RE = re.compile(r"n\.news\.naver\.com/(?:mnews/)?(?:hotissue/)?article/(\d+)/(\d+)")
 
 
 def strip_html(text: str) -> str:
@@ -26,43 +21,37 @@ def strip_html(text: str) -> str:
     return html.unescape(_TAG_RE.sub("", text or "")).strip()
 
 
-def normalize_url(url: str) -> str:
-    """스킴 통일, 호스트 소문자화, 추적 파라미터 제거, 쿼리 정렬, 말단 슬래시 제거."""
-    if not url:
-        return ""
-    parts = urlsplit(url.strip())
-    scheme = "https"  # http/https 차이는 같은 기사로 본다
-    host = parts.netloc.lower()
-    if host.startswith("www."):
-        host = host[4:]
-    if host.startswith("m."):  # 모바일 도메인을 데스크톱과 합친다
-        host = host[2:]
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=False)
-             if k.lower() not in _TRACKING_PARAMS]
-    query.sort()
-    path = parts.path.rstrip("/") or "/"
-    return urlunsplit((scheme, host, path, urlencode(query), ""))
+def naver_article_id(link: str) -> str | None:
+    """n.news.naver.com 기사 링크 → 'oid_aid'. 네이버 뉴스가 아니면 None."""
+    m = _NAVER_ARTICLE_RE.search(link or "")
+    return f"{m.group(1)}_{m.group(2)}" if m else None
+
+
+def press_from_url(url: str) -> str:
+    host = urlsplit(url or "").netloc.lower()
+    for prefix in ("www.", "m.", "news.", "biz."):
+        if host.startswith(prefix):
+            host = host[len(prefix):]
+    return host
 
 
 def normalize_title(title: str) -> str:
-    """제목 비교용 키. 대괄호 머리말, 매체명 꼬리, 기호, 공백을 모두 제거한다."""
-    text = strip_html(title)
-    text = unicodedata.normalize("NFKC", text)
+    """제목 비교용 키. 대괄호 머리말, 매체명 꼬리, 특수문자, 공백을 모두 제거한다."""
+    text = unicodedata.normalize("NFKC", strip_html(title))
     text = _BRACKET_RE.sub(" ", text)
     text = _SOURCE_SUFFIX_RE.sub("", text)
-    text = text.lower()
-    return _NON_WORD_RE.sub("", text)
+    return _NON_WORD_RE.sub("", text.lower())
 
 
-def tokenize(text: str) -> list[str]:
-    """유사도 계산용 토큰. 한글은 2-gram, 영문/숫자는 단어 단위."""
-    text = unicodedata.normalize("NFKC", strip_html(text)).lower()
-    tokens: list[str] = []
-    for chunk in re.findall(r"[a-z0-9]+|[가-힣]+", text):
-        if chunk[0].isascii():
-            tokens.append(chunk)
-        elif len(chunk) == 1:
-            tokens.append(chunk)
-        else:
-            tokens.extend(chunk[i:i + 2] for i in range(len(chunk) - 1))
-    return tokens
+def char_bigrams(text: str) -> set[str]:
+    """문자 2-gram 집합 (공백·기호 제거 후). 3·4단계 Jaccard 비교용."""
+    t = _NON_WORD_RE.sub("", unicodedata.normalize("NFKC", strip_html(text)).lower())
+    if len(t) < 2:
+        return {t} if t else set()
+    return {t[i:i + 2] for i in range(len(t) - 1)}
+
+
+def jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)

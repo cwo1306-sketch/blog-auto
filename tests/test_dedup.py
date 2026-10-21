@@ -1,75 +1,91 @@
 from naver_cardnews.db import Article, Database
-from naver_cardnews.dedup import SIMHASH_MIN_TOKENS, Deduplicator, hamming, simhash
-from naver_cardnews.normalize import normalize_title, normalize_url
+from naver_cardnews.dedup import Deduplicator
+from naver_cardnews.normalize import normalize_title
+
+NOW = "2026-10-21T03:00:00+00:00"
 
 
-def make(title, url, desc="", keyword="AI"):
-    return Article(
-        url_key=normalize_url(url), title_key=normalize_title(title),
-        simhash=simhash(desc, min_tokens=SIMHASH_MIN_TOKENS), title=title, description=desc,
-        link=url, original_link=url, source="example.com",
-        pub_date="2099-01-01T00:00:00+00:00", keyword=keyword, keyword_group="g",
-    )
+def make(aid, title, desc="", press="a.com", pub=NOW, keyword="AI"):
+    return Article(id=aid, keyword=keyword, title=title, press=press, pub_date=pub,
+                   naver_link=f"https://n.news.naver.com/article/{aid.replace('_', '/')}",
+                   originallink=f"https://{press}/{aid}", description=desc,
+                   title_key=normalize_title(title))
 
 
-def insert_unique(db, dedup, art):
-    new_id = db.insert(art)
-    dedup.remember(new_id, art.title, art.simhash)
-    return new_id
+def store(db, dedup, art):
+    d = dedup.decide(art)
+    cid = d.cluster_id if d.cluster_id is not None else db.next_cluster_id()
+    db.insert(art, cid, d.cluster_id is None, d.status, d.reason)
+    db.conn.commit()
+    return d
 
 
-def test_stage1_url():
+def test_stage1_same_naver_id():
     db = Database(":memory:")
-    d = Deduplicator(db)
-    base = make("엔비디아 신형 칩 공개", "https://a.com/1?utm_source=x")
-    oid = insert_unique(db, d, base)
-    r = d.check(normalize_url("https://www.a.com/1/"), "다른제목", "다른 제목", 123)
-    assert (r.stage, r.duplicate_of) == (1, oid)
+    dd = Deduplicator(db)
+    store(db, dd, make("001_1", "엔비디아 신형 칩 공개"))
+    d = dd.decide(make("001_1", "다른 제목", keyword="반도체"))
+    assert d.stage == 1 and d.status == "제외"
 
 
-def test_stage2_title():
+def test_stage2_title_match_joins_cluster():
     db = Database(":memory:")
-    d = Deduplicator(db)
-    oid = insert_unique(db, d, make("엔비디아, 신형 AI 칩 공개", "https://a.com/1"))
-    dup = make("[단독] 엔비디아 신형 AI 칩 공개 - 뉴스1", "https://b.com/2")
-    r = d.check(dup.url_key, dup.title_key, dup.title, dup.simhash)
-    assert (r.stage, r.duplicate_of) == (2, oid)
+    dd = Deduplicator(db)
+    d0 = store(db, dd, make("001_1", "엔비디아, 신형 AI 칩 공개"))
+    d = store(db, dd, make("002_1", "[단독] 엔비디아 신형 AI 칩 공개 - 뉴스1", press="b.com"))
+    assert d.stage == 2 and d.status == "제외"
+    assert db.get("002_1")["cluster_id"] == db.get("001_1")["cluster_id"]
+    assert db.get("002_1")["is_representative"] == 0
 
 
-def test_stage3_similar_title():
+def test_stage3_near_duplicate_within_72h():
     db = Database(":memory:")
-    d = Deduplicator(db)
-    oid = insert_unique(db, d, make("오픈AI, 차세대 모델 GPT 공개하며 경쟁 본격화", "https://a.com/1"))
-    dup = make("오픈AI, 차세대 모델 GPT 공개하며 경쟁 본격화한다", "https://b.com/2")
-    r = d.check(dup.url_key, dup.title_key, dup.title, dup.simhash)
-    assert (r.stage, r.duplicate_of) == (3, oid)
+    dd = Deduplicator(db)
+    desc = "오픈AI가 21일 차세대 모델 GPT-6를 공개했다. 추론 성능이 두 배로 향상됐다고 밝혔다."
+    store(db, dd, make("001_1", "오픈AI, 차세대 모델 GPT-6 공개", desc))
+    d = store(db, dd, make("002_1", "오픈AI GPT-6 공개…추론 성능 2배", desc + " 업계는 주목했다.",
+                            press="b.com", pub="2026-10-21T20:00:00+00:00"))
+    assert d.stage == 3 and d.status == "제외"
+    # 창 밖(4일 뒤)이면 새 클러스터
+    d2 = store(db, dd, make("003_1", "오픈AI GPT-6 공개…추론 성능 2배", desc, press="c.com",
+                             pub="2026-10-25T20:00:00+00:00"))
+    assert d2.stage == 0
 
 
-def test_stage4_simhash_body():
+def test_stage3_borderline_uses_judge():
+    class YesJudge:
+        def same_event(self, *a):
+            return True
+
     db = Database(":memory:")
-    d = Deduplicator(db)
-    body = ("삼성전자가 차세대 고대역폭메모리 HBM4 양산을 시작했다고 21일 밝혔다. 엔비디아 등 주요 고객사에 "
-            "공급될 예정이며 수율 안정화로 하반기 실적 개선이 기대된다고 회사 측은 설명했다.")
-    oid = insert_unique(db, d, make("삼성 HBM4 양산 돌입", "https://a.com/1", body))
-    dup = make("삼성전자 실적 개선 기대", "https://b.com/2", body + " 업계는 환영했다.")
-    assert hamming(simhash(body), dup.simhash) <= 6
-    r = d.check(dup.url_key, dup.title_key, dup.title, dup.simhash)
-    assert (r.stage, r.duplicate_of) == (4, oid)
+    dd = Deduplicator(db, judge=YesJudge())
+    store(db, dd, make("001_1", "삼성전자 HBM4 양산 시작", "삼성전자가 차세대 HBM4 양산을 시작했다고 밝혔다"))
+    d = store(db, dd, make("002_1", "삼성전자, HBM4 양산 돌입", "삼성전자가 차세대 HBM4 양산에 들어갔다고 밝혔다. 수율이 관건",
+                            press="b.com"))
+    assert d.stage == 3 and "haiku=같음" in d.reason
+    assert dd.judge_calls >= 1
 
 
-def test_stage4_skipped_for_short_description():
+def test_stage4_already_posted():
     db = Database(":memory:")
-    d = Deduplicator(db)
-    insert_unique(db, d, make("엔비디아 신형 칩", "https://a.com/1", "블랙웰 후속작"))
-    other = make("SK하이닉스 HBM4 계약", "https://b.com/2", "내년 상반기 양산")
-    assert other.simhash == 0
-    assert d.check(other.url_key, other.title_key, other.title, other.simhash).stage == 0
+    dd = Deduplicator(db)
+    desc = "테슬라가 서울에서 로보택시 시범 운행을 시작했다. 강남 일대에서 50대가 운행된다."
+    store(db, dd, make("001_1", "테슬라 로보택시 서울 시범 운행", desc, pub="2026-10-15T00:00:00+00:00"))
+    db.conn.execute("UPDATE articles SET status='게시완료', posted_at='2026-10-16T00:00:00+00:00'")
+    db.conn.commit()
+    d = store(db, dd, make("002_1", "테슬라 로보택시, 서울 강남 시범 운행 개시", desc, press="b.com"))
+    assert d.stage == 4 and d.reason.startswith("기게시")
+    assert db.get("002_1")["is_representative"] == 1  # 자기 클러스터의 대표이지만 상태는 제외
+    assert db.get("002_1")["status"] == "제외"
 
 
-def test_unrelated_is_unique():
+def test_unrelated_is_new_cluster_and_score_counts_press():
     db = Database(":memory:")
-    d = Deduplicator(db)
-    insert_unique(db, d, make("엔비디아 신형 칩 공개", "https://a.com/1", "GPU 시장 점유율 확대"))
-    other = make("테슬라 로보택시 서울 시범 운행", "https://b.com/2", "자율주행 택시가 강남에서 운행을 시작한다")
-    r = d.check(other.url_key, other.title_key, other.title, other.simhash)
-    assert r.stage == 0
+    dd = Deduplicator(db)
+    store(db, dd, make("001_1", "엔비디아 신형 칩 공개", "GPU 시장 점유율 확대"))
+    d = store(db, dd, make("002_1", "AI 기본법 시행령 입법예고", "과기정통부가 AI 기본법 시행령을 입법예고했다", press="b.com"))
+    assert d.stage == 0 and d.status == "대기"
+    store(db, dd, make("003_1", "[속보] 엔비디아 신형 칩 공개", "GPU 시장 점유율 확대", press="c.com"))
+    db.refresh_scores()
+    assert db.get("001_1")["score"] == 2
+    assert db.get("002_1")["score"] == 1

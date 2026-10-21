@@ -1,119 +1,92 @@
-"""4단계 중복 제거.
+"""4단계 중복 제거 (HANDOFF.md 5장).
 
-1단계  URL 일치      : 정규화한 원문 URL이 같다 (같은 기사를 다른 키워드로 다시 받은 경우).
-2단계  제목 일치     : 머리말·매체명·기호를 뺀 제목이 완전히 같다 (같은 기사의 재송고, 포털 재게시).
-3단계  제목 유사     : 2-gram 자카드 유사도가 임계값 이상 (통신사 기사 받아쓰기, 어미만 바꾼 제목).
-4단계  본문 지문     : 요약문 SimHash 해밍 거리가 임계값 이하 (제목은 달라도 내용이 같은 기사).
-                     요약이 짧으면(토큰 < SIMHASH_MIN_TOKENS) 지문이 불안정하므로 건너뛴다.
-
-3·4단계는 최근 N일의 고유 기사하고만 비교해 비용을 묶어 둔다.
+1. URL 완전 일치   : 네이버 oid_aid 같음 → 저장 안 함, 걸린 키워드만 추가
+2. 제목 정규화 일치: [단독]·[속보]·괄호·특수문자·공백 제거 후 같음 → 같은 클러스터, 제외
+3. 근접 중복       : 제목+요약 문자 2-gram Jaccard ≥ 0.5 (72시간 창) → 같은 클러스터, 대표만 대기
+                     0.35~0.5 경계는 Haiku 판정. 클러스터 크기(언론사 수) = 중요도 점수
+4. 기게시 중복     : 최근 14일 '게시완료' 건과 같은 방식 비교 → 제외(기게시)
 """
 
 from __future__ import annotations
 
-import hashlib
-from collections import Counter
+import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from .db import Database
-from .normalize import tokenize
-
-TITLE_SIMILARITY_THRESHOLD = 0.80   # 3단계
-SIMHASH_MAX_DISTANCE = 6            # 4단계 (63비트 기준, 요약문 기준 측정값: 문장 하나 추가 ≈ 6, 재서술 ≈ 15, 무관 ≈ 30)
-SIMHASH_MIN_TOKENS = 15             # 요약이 이보다 짧으면 4단계는 건너뛴다 (짧은 글은 지문 신뢰도가 낮다)
-NEAR_DUP_WINDOW_DAYS = 3
-
-
-def simhash(text: str, bits: int = 63, min_tokens: int = 0) -> int:
-    """토큰 빈도 가중 SimHash. SQLite INTEGER(부호 있는 64비트)에 맞춰 63비트를 쓴다.
-    토큰이 min_tokens보다 적으면 0(지문 없음)을 돌려준다."""
-    tokens = tokenize(text)
-    counts = Counter(tokens)
-    if not counts or len(tokens) < min_tokens:
-        return 0
-    vec = [0] * bits
-    for token, weight in counts.items():
-        h = int.from_bytes(hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest(), "big")
-        for i in range(bits):
-            vec[i] += weight if (h >> i) & 1 else -weight
-    out = 0
-    for i, v in enumerate(vec):
-        if v > 0:
-            out |= 1 << i
-    return out
-
-
-def hamming(a: int, b: int) -> int:
-    return bin(a ^ b).count("1")
-
-
-def jaccard(a: list[str], b: list[str]) -> float:
-    sa, sb = set(a), set(b)
-    if not sa or not sb:
-        return 0.0
-    return len(sa & sb) / len(sa | sb)
+from .db import Article, Database
+from .judge import Judge
+from .normalize import char_bigrams, jaccard
 
 
 @dataclass
-class DedupResult:
-    stage: int                 # 0이면 고유
-    duplicate_of: int | None   # 원본 article id
+class Decision:
+    stage: int              # 0=고유(새 클러스터 대표), 1~4
+    cluster_id: int | None  # 1단계는 None
+    status: str             # 대기 / 제외
     reason: str = ""
 
 
+def _grams(title: str, description: str) -> set[str]:
+    return char_bigrams(f"{title} {description}")
+
+
 class Deduplicator:
-    def __init__(
-        self,
-        db: Database,
-        title_threshold: float = TITLE_SIMILARITY_THRESHOLD,
-        simhash_distance: int = SIMHASH_MAX_DISTANCE,
-        window_days: int = NEAR_DUP_WINDOW_DAYS,
-    ):
+    def __init__(self, db: Database, threshold: float = 0.5, borderline: float = 0.35,
+                 window_hours: int = 72, posted_days: int = 14, judge: Judge | None = None):
         self.db = db
-        self.title_threshold = title_threshold
-        self.simhash_distance = simhash_distance
-        self.window_days = window_days
-        self._cache: list[tuple[int, list[str], int]] | None = None
-        self._cache_since: str | None = None
+        self.threshold = threshold
+        self.borderline = borderline
+        self.window = timedelta(hours=window_hours)
+        self.posted_window = timedelta(days=posted_days)
+        self.judge = judge
+        self.judge_calls = 0
 
-    # 수집 한 번 도는 동안 최근 고유 기사 목록을 메모리에 들고 있는다.
-    def _recent(self) -> list[tuple[int, list[str], int]]:
-        since = (datetime.now(timezone.utc) - timedelta(days=self.window_days)).isoformat()
-        if self._cache is None or self._cache_since != since[:13]:
-            rows = self.db.unique_since(since)
-            self._cache = [(r["id"], tokenize(r["title"]), r["simhash"]) for r in rows]
-            self._cache_since = since[:13]
-        return self._cache
+    def _similar(self, a: Article, grams: set[str], rows: list[sqlite3.Row]) -> tuple[sqlite3.Row | None, float, str]:
+        """가장 유사한 행과 점수, 판정 근거. 임계 미만이면 (None, best, '')."""
+        best_row, best_sim = None, 0.0
+        borderline: list[tuple[float, sqlite3.Row]] = []
+        for row in rows:
+            if row["id"] == a.id:
+                continue
+            sim = jaccard(grams, _grams(row["title"], row["description"]))
+            if sim >= self.threshold and sim > best_sim:
+                best_row, best_sim = row, sim
+            elif self.borderline <= sim < self.threshold:
+                borderline.append((sim, row))
+        if best_row is not None:
+            return best_row, best_sim, f"j={best_sim:.2f}"
+        if self.judge is not None:
+            for sim, row in sorted(borderline, key=lambda x: -x[0])[:3]:
+                self.judge_calls += 1
+                if self.judge.same_event(a.title, a.description, row["title"], row["description"]):
+                    return row, sim, f"j={sim:.2f}, haiku=같음"
+        return None, best_sim, ""
 
-    def remember(self, article_id: int, title: str, sh: int) -> None:
-        if self._cache is not None:
-            self._cache.append((article_id, tokenize(title), sh))
+    def decide(self, a: Article) -> Decision:
+        # 1단계: 같은 네이버 기사
+        if self.db.get(a.id) is not None:
+            return Decision(1, None, "제외", "중복(URL)")
 
-    def check(self, url_key: str, title_key: str, title: str, sh: int) -> DedupResult:
-        # 1단계: URL
-        row = self.db.find_by_url(url_key)
-        if row is not None:
-            origin = row["duplicate_of"] or row["id"]
-            return DedupResult(1, origin, "same url")
+        pub = datetime.fromisoformat(a.pub_date)
+        lo, hi = (pub - self.window).isoformat(), (pub + self.window).isoformat()
 
-        # 2단계: 정규화 제목
-        if title_key:
-            row = self.db.find_by_title_key(title_key)
+        # 2단계: 정규화 제목 일치 (같은 72시간 창 안에서만: 제목만 같은 다른 날 기사는 다른 사건)
+        if a.title_key:
+            row = self.db.find_by_title_key(a.title_key, lo, hi)
             if row is not None:
-                return DedupResult(2, row["id"], "same normalized title")
+                return Decision(2, row["cluster_id"], "제외", f"중복(제목) ← {row['id']}")
 
-        # 3·4단계: 최근 고유 기사와 근사 비교
-        tokens = tokenize(title)
-        best_stage, best_id, best_reason = 0, None, ""
-        for other_id, other_tokens, other_hash in self._recent():
-            sim = jaccard(tokens, other_tokens)
-            if sim >= self.title_threshold:
-                return DedupResult(3, other_id, f"title jaccard={sim:.2f}")
-            if sh and other_hash:
-                dist = hamming(sh, other_hash)
-                if dist <= self.simhash_distance and best_id is None:
-                    best_stage, best_id, best_reason = 4, other_id, f"simhash distance={dist}"
-        if best_id is not None:
-            return DedupResult(best_stage, best_id, best_reason)
-        return DedupResult(0, None)
+        # 3단계: 72시간 창 안의 대표 기사와 근접 비교
+        grams = _grams(a.title, a.description)
+        reps = self.db.representatives_between(lo, hi)
+        row, sim, why = self._similar(a, grams, reps)
+        if row is not None:
+            return Decision(3, row["cluster_id"], "제외", f"근접중복({why}) ← {row['id']}")
+
+        # 4단계: 최근 14일 게시완료 건과 비교
+        posted = self.db.posted_since((pub - self.posted_window).isoformat())
+        row, sim, why = self._similar(a, grams, posted)
+        if row is not None:
+            return Decision(4, None, "제외", f"기게시({why}) ← {row['id']}")
+
+        return Decision(0, None, "대기")

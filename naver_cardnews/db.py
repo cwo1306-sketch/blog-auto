@@ -1,4 +1,4 @@
-"""SQLite 저장소. articles 한 테이블에 수집·중복·검토 상태를 모두 기록한다."""
+"""SQLite 저장소(원본). 엑셀은 이 DB를 보기/승인용으로 내보낸 사본이다."""
 
 from __future__ import annotations
 
@@ -9,39 +9,41 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
+STATUSES = ("대기", "승인", "제작완료", "게시완료", "제외")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    url_key         TEXT NOT NULL UNIQUE,       -- 정규화된 원문 URL (1단계 중복 키)
-    title_key       TEXT NOT NULL,              -- 정규화된 제목 (2단계 중복 키)
-    simhash         INTEGER NOT NULL,           -- 제목+요약 SimHash (4단계 중복 키)
-    title           TEXT NOT NULL,
-    description     TEXT NOT NULL DEFAULT '',
-    link            TEXT NOT NULL,              -- 네이버 뉴스 링크
-    original_link   TEXT NOT NULL,              -- 언론사 원문 링크
-    source          TEXT NOT NULL DEFAULT '',   -- 원문 도메인
-    pub_date        TEXT NOT NULL,              -- ISO8601(UTC)
-    keyword         TEXT NOT NULL,              -- 처음 발견한 검색어
-    keyword_group   TEXT NOT NULL DEFAULT '',
+    id              TEXT PRIMARY KEY,           -- 네이버 oid_aid
     collected_at    TEXT NOT NULL,
-    dedup_stage     INTEGER NOT NULL DEFAULT 0, -- 0=고유, 1~4=해당 단계에서 중복 판정
-    duplicate_of    INTEGER REFERENCES articles(id),
-    review_status   TEXT NOT NULL DEFAULT 'pending', -- pending / approved / rejected / exported
-    exported_at     TEXT
+    keyword         TEXT NOT NULL,              -- 처음 발견한 검색어
+    keywords_hit    TEXT NOT NULL DEFAULT '',   -- 걸린 검색어 전부 (쉼표 구분)
+    title           TEXT NOT NULL,
+    press           TEXT NOT NULL DEFAULT '',   -- 언론사 (원문 도메인)
+    pub_date        TEXT NOT NULL,              -- ISO8601 UTC
+    naver_link      TEXT NOT NULL,
+    originallink    TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL DEFAULT '',
+    title_key       TEXT NOT NULL,              -- 정규화 제목
+    cluster_id      INTEGER,
+    is_representative INTEGER NOT NULL DEFAULT 1,
+    dup_reason      TEXT NOT NULL DEFAULT '',
+    score           INTEGER NOT NULL DEFAULT 1, -- 클러스터 내 언론사 수
+    status          TEXT NOT NULL DEFAULT '대기',
+    card_folder     TEXT NOT NULL DEFAULT '',
+    post_url        TEXT NOT NULL DEFAULT '',
+    memo            TEXT NOT NULL DEFAULT '',
+    posted_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_articles_title_key ON articles(title_key);
 CREATE INDEX IF NOT EXISTS idx_articles_pub_date ON articles(pub_date);
-CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(review_status, dedup_stage);
+CREATE INDEX IF NOT EXISTS idx_articles_cluster ON articles(cluster_id);
+CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 
 CREATE TABLE IF NOT EXISTS collect_runs (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    started_at    TEXT NOT NULL,
-    finished_at   TEXT,
-    keywords      INTEGER NOT NULL DEFAULT 0,
-    fetched       INTEGER NOT NULL DEFAULT 0,
-    inserted      INTEGER NOT NULL DEFAULT 0,
-    duplicates    INTEGER NOT NULL DEFAULT 0,
-    errors        TEXT NOT NULL DEFAULT ''
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    summary     TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -52,17 +54,15 @@ def utcnow() -> str:
 
 @dataclass
 class Article:
-    url_key: str
-    title_key: str
-    simhash: int
-    title: str
-    description: str
-    link: str
-    original_link: str
-    source: str
-    pub_date: str
+    id: str
     keyword: str
-    keyword_group: str
+    title: str
+    press: str
+    pub_date: str
+    naver_link: str
+    originallink: str
+    description: str
+    title_key: str
 
 
 class Database:
@@ -73,7 +73,6 @@ class Database:
         self.conn = sqlite3.connect(str(self.path))
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
 
     def close(self) -> None:
@@ -89,77 +88,108 @@ class Database:
             raise
 
     # --- 조회 -------------------------------------------------------------
-    def find_by_url(self, url_key: str) -> sqlite3.Row | None:
-        return self.conn.execute("SELECT * FROM articles WHERE url_key=?", (url_key,)).fetchone()
+    def get(self, article_id: str) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM articles WHERE id=?", (article_id,)).fetchone()
 
-    def find_by_title_key(self, title_key: str) -> sqlite3.Row | None:
+    def find_by_title_key(self, title_key: str, start_iso: str, end_iso: str) -> sqlite3.Row | None:
         return self.conn.execute(
-            "SELECT * FROM articles WHERE title_key=? AND dedup_stage=0 ORDER BY id LIMIT 1",
-            (title_key,),
+            "SELECT * FROM articles WHERE title_key=? AND pub_date BETWEEN ? AND ? "
+            "ORDER BY pub_date LIMIT 1", (title_key, start_iso, end_iso),
         ).fetchone()
 
-    def unique_since(self, since_iso: str) -> list[sqlite3.Row]:
-        """근사 중복 비교 대상: 지정 시각 이후의 고유 기사만."""
+    def representatives_between(self, start_iso: str, end_iso: str) -> list[sqlite3.Row]:
         return self.conn.execute(
-            "SELECT id, title, title_key, simhash, pub_date FROM articles "
-            "WHERE dedup_stage=0 AND pub_date>=? ORDER BY id",
+            "SELECT * FROM articles WHERE is_representative=1 AND pub_date BETWEEN ? AND ? "
+            "ORDER BY pub_date", (start_iso, end_iso),
+        ).fetchall()
+
+    def posted_since(self, since_iso: str) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM articles WHERE status='게시완료' AND COALESCE(posted_at, pub_date)>=?",
             (since_iso,),
         ).fetchall()
 
-    def pending_unique(self) -> list[sqlite3.Row]:
-        return self.conn.execute(
-            "SELECT * FROM articles WHERE dedup_stage=0 AND review_status='pending' "
-            "ORDER BY pub_date DESC, id DESC"
-        ).fetchall()
+    def next_cluster_id(self) -> int:
+        row = self.conn.execute("SELECT COALESCE(MAX(cluster_id), 0) + 1 FROM articles").fetchone()
+        return int(row[0])
 
-    def duplicate_count(self, article_id: int) -> int:
+    def cluster_press_count(self, cluster_id: int) -> int:
         row = self.conn.execute(
-            "SELECT COUNT(*) FROM articles WHERE duplicate_of=?", (article_id,)
+            "SELECT COUNT(DISTINCT press) FROM articles WHERE cluster_id=?", (cluster_id,)
         ).fetchone()
         return int(row[0])
 
-    def stats(self) -> dict[str, int]:
-        rows = self.conn.execute(
-            "SELECT dedup_stage, COUNT(*) FROM articles GROUP BY dedup_stage"
+    def for_export(self) -> list[sqlite3.Row]:
+        """엑셀에는 전부 내보낸다(제외 포함). 대표·대기 건이 위로 오도록 정렬."""
+        return self.conn.execute(
+            "SELECT * FROM articles ORDER BY "
+            "CASE status WHEN '대기' THEN 0 WHEN '승인' THEN 1 WHEN '제작완료' THEN 2 "
+            "WHEN '게시완료' THEN 3 ELSE 4 END, is_representative DESC, score DESC, pub_date DESC"
         ).fetchall()
-        out = {f"stage_{r[0]}": r[1] for r in rows}
-        out["total"] = sum(out.values())
-        out["pending"] = self.conn.execute(
-            "SELECT COUNT(*) FROM articles WHERE dedup_stage=0 AND review_status='pending'"
-        ).fetchone()[0]
+
+    def stats(self) -> dict[str, int]:
+        out = {r[0]: r[1] for r in self.conn.execute(
+            "SELECT status, COUNT(*) FROM articles GROUP BY status")}
+        out["전체"] = sum(out.values())
+        out["클러스터"] = self.conn.execute(
+            "SELECT COUNT(DISTINCT cluster_id) FROM articles").fetchone()[0]
         return out
 
     # --- 쓰기 -------------------------------------------------------------
-    def insert(self, a: Article, dedup_stage: int = 0, duplicate_of: int | None = None) -> int:
-        cur = self.conn.execute(
-            "INSERT INTO articles (url_key, title_key, simhash, title, description, link, "
-            "original_link, source, pub_date, keyword, keyword_group, collected_at, "
-            "dedup_stage, duplicate_of) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (a.url_key, a.title_key, a.simhash, a.title, a.description, a.link,
-             a.original_link, a.source, a.pub_date, a.keyword, a.keyword_group,
-             utcnow(), dedup_stage, duplicate_of),
-        )
-        return int(cur.lastrowid)
-
-    def mark_exported(self, ids: list[int]) -> None:
-        now = utcnow()
-        self.conn.executemany(
-            "UPDATE articles SET review_status='exported', exported_at=? WHERE id=?",
-            [(now, i) for i in ids],
-        )
-        self.conn.commit()
-
-    def start_run(self, keyword_count: int) -> int:
-        cur = self.conn.execute(
-            "INSERT INTO collect_runs (started_at, keywords) VALUES (?, ?)",
-            (utcnow(), keyword_count),
-        )
-        self.conn.commit()
-        return int(cur.lastrowid)
-
-    def finish_run(self, run_id: int, fetched: int, inserted: int, duplicates: int, errors: list[str]) -> None:
+    def insert(self, a: Article, cluster_id: int, is_representative: bool,
+               status: str, dup_reason: str = "") -> None:
         self.conn.execute(
-            "UPDATE collect_runs SET finished_at=?, fetched=?, inserted=?, duplicates=?, errors=? WHERE id=?",
-            (utcnow(), fetched, inserted, duplicates, "\n".join(errors), run_id),
+            "INSERT INTO articles (id, collected_at, keyword, keywords_hit, title, press, pub_date, "
+            "naver_link, originallink, description, title_key, cluster_id, is_representative, "
+            "dup_reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (a.id, utcnow(), a.keyword, a.keyword, a.title, a.press, a.pub_date, a.naver_link,
+             a.originallink, a.description, a.title_key, cluster_id, int(is_representative),
+             dup_reason, status),
         )
+
+    def add_keyword_hit(self, article_id: str, keyword: str) -> None:
+        row = self.get(article_id)
+        if row is None:
+            return
+        hits = [k for k in row["keywords_hit"].split(",") if k]
+        if keyword not in hits:
+            hits.append(keyword)
+            self.conn.execute("UPDATE articles SET keywords_hit=? WHERE id=?",
+                              (",".join(hits), article_id))
+
+    def refresh_scores(self) -> None:
+        """대표 기사의 score = 클러스터 내 언론사 수."""
+        self.conn.execute(
+            "UPDATE articles SET score=(SELECT COUNT(DISTINCT press) FROM articles b "
+            "WHERE b.cluster_id=articles.cluster_id)"
+        )
+        self.conn.commit()
+
+    def update_review(self, article_id: str, status: str | None, memo: str | None,
+                      card_folder: str | None, post_url: str | None) -> bool:
+        row = self.get(article_id)
+        if row is None:
+            return False
+        fields, values = [], []
+        if status and status in STATUSES and status != row["status"]:
+            fields.append("status=?"); values.append(status)
+            if status == "게시완료":
+                fields.append("posted_at=?"); values.append(utcnow())
+        for col, val in (("memo", memo), ("card_folder", card_folder), ("post_url", post_url)):
+            if val is not None and val != row[col]:
+                fields.append(f"{col}=?"); values.append(val)
+        if not fields:
+            return False
+        values.append(article_id)
+        self.conn.execute(f"UPDATE articles SET {', '.join(fields)} WHERE id=?", values)
+        return True
+
+    def start_run(self) -> int:
+        cur = self.conn.execute("INSERT INTO collect_runs (started_at) VALUES (?)", (utcnow(),))
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def finish_run(self, run_id: int, summary: str) -> None:
+        self.conn.execute("UPDATE collect_runs SET finished_at=?, summary=? WHERE id=?",
+                          (utcnow(), summary, run_id))
         self.conn.commit()
