@@ -63,6 +63,7 @@ body.stat .value .unit { font-size: .4em; font-weight: 700; margin-left: .05em; 
 body.stat .value[data-len="short"]  { font-size: 380px; }
 body.stat .value[data-len="medium"] { font-size: 300px; }
 body.stat .value[data-len="long"]   { font-size: 240px; }
+body.stat .value .unit.below { display: block; font-size: .22em; margin: 18px 0 0; letter-spacing: 0; color: var(--paper); }
 body.stat .stat-label { margin-top: 44px; font-size: 52px; font-weight: 700; line-height: 1.25; color: var(--paper); }
 body.stat .quote { position: absolute; left: var(--m); right: var(--m); bottom: 150px; font-size: 30px; line-height: 1.5;
   color: var(--paper); opacity: .72; border-left: 6px solid var(--hl); padding-left: 22px;

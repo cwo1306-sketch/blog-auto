@@ -44,11 +44,12 @@ def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num:
 
 def _stat_inner(stat: dict) -> str:
     value, unit = str(stat["value"]), str(stat.get("unit", ""))
+    unit_cls = "unit below" if len(unit) >= 3 else "unit"    # '파라미터'처럼 긴 단위는 숫자 아래 줄에
     quote = stat.get("source_quote", "")
     if len(quote) > STAT_MAX_QUOTE:
         quote = quote[:STAT_MAX_QUOTE - 1] + "…"
     return (f'<div class="text"><div class="value" data-len="{len_class(value, unit)}">'
-            f'<span class="num">{escape(value)}<span class="unit">{escape(unit)}</span></span></div>'
+            f'<span class="num">{escape(value)}<span class="{unit_cls}">{escape(unit)}</span></span></div>'
             f'<div class="stat-label">{escape(stat.get("label", ""))}</div></div>'
             f'<div class="quote">{escape(quote)}</div>')
 
@@ -134,7 +135,7 @@ LAYOUT_JS = """() => {
 SHRINK_JS = """() => {
   const v = document.querySelector('.value'); if (!v) return null;
   const n = v.querySelector('.num'); let size = parseFloat(getComputedStyle(v).fontSize);
-  while (n.getBoundingClientRect().right > %d - 64 && size > 160) { size -= 20; v.style.fontSize = size + 'px'; }
+  while (n.getBoundingClientRect().right > %d - 64 && size > 120) { size -= 20; v.style.fontSize = size + 'px'; }
   return size;
 }""" % W
 

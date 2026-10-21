@@ -46,7 +46,8 @@ def len_class(value: str, unit: str) -> str:
     """숫자 글자 수 + 단위 폭(한글 단위는 숫자 1자 폭, 기호는 반 자)으로 크기 단계를 정한다.
     렌더 때 그래도 넘치면 render_png가 글자 크기를 더 줄인다."""
     n = sum(ch.isdigit() for ch in value) + (0.5 if "." in value else 0)
-    n += sum(1.0 if ord(ch) > 0x2E80 else 0.5 for ch in unit.strip())
+    u = unit.strip()
+    n += 0 if len(u) >= 3 else sum(1.0 if ord(ch) > 0x2E80 else 0.5 for ch in u)   # 3자 이상 단위는 아래 줄로 내려가 폭에 안 들어감
     if n <= 3.5:
         return "short"
     if n <= 5.5:
@@ -89,7 +90,7 @@ def render_png(stat: Stat, out_path: Path, page_no: int, total: int = 6) -> dict
         page.evaluate("""() => {
             const v = document.querySelector('.value'); const n = v.querySelector('.num');
             let size = parseFloat(getComputedStyle(v).fontSize);
-            while (n.getBoundingClientRect().right > 1080 - 64 && size > 160) { size -= 20; v.style.fontSize = size + 'px'; }
+            while (n.getBoundingClientRect().right > 1080 - 64 && size > 120) { size -= 20; v.style.fontSize = size + 'px'; }
         }""")
         qa = page.evaluate("""() => {
             const v = document.querySelector('.value .num'); const r = v.getBoundingClientRect();
