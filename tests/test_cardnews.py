@@ -257,7 +257,7 @@ def test_theme_css_link(monkeypatch):
     monkeypatch.setenv("CARDNEWS_THEME", "")
     assert "theme_" not in render.build_pages(SCRIPT, ["bg_01.jpg", "bg_02.jpg", None, None], "출처")[0]
     css = (ROOT / "templates" / "theme_jua.css").read_text(encoding="utf-8")
-    assert "font-synthesis: none" in css and "BM JUA_OTF" in css and '"Jua"' in css
+    assert "font-synthesis: none" in css and "var(--display)" in css   # 글꼴 이름(--display)은 card.css 에 정의
 
 
 def test_mixed_font_rules_in_card_css():
