@@ -40,7 +40,7 @@ def test_collect_import_export(tmp_path: Path):
         ],
     }
     s = Settings(client_id="x", client_secret="y", db_path=tmp_path / "t.db",
-                 output_path=tmp_path / "q.xlsx", keywords=["엔비디아", "AI 반도체"],
+                 output_path=tmp_path / "q.xlsx", keywords=["엔비디아", "AI 반도체"], sections=[],
                  topic_terms=["AI", "엔비디아", "HBM"], exclude_terms=["코스피"])
     db = Database(s.db_path)
     rep = collect(s, db, client=FakeClient(data))
@@ -110,7 +110,7 @@ def test_niche_judge_rejects_only_new_representatives(tmp_path: Path):
         item("003", "3", "오픈AI, 챗GPT에 대화 잠금 기능 도입", "개인정보 보호 강화", now, "https://c.com/3"),
     ]}
     s = Settings(client_id="x", client_secret="y", db_path=tmp_path / "t.db",
-                 output_path=tmp_path / "q.xlsx", keywords=["AI"], topic_terms=["AI"])
+                 output_path=tmp_path / "q.xlsx", keywords=["AI"], topic_terms=["AI"], sections=[])
     db = Database(s.db_path)
     rep = collect(s, db, client=FakeClient(data), judge=Judge())
     assert rep.off_niche_ai == 1 and rep.new_clusters == 1

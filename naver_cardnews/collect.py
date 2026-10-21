@@ -17,6 +17,7 @@ from .dedup import Deduplicator
 from .judge import Judge
 from .normalize import (naver_article_id, normalize_title, off_niche_reason, press_from_url,
                         strip_html)
+from .section import crawl_sections
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ def item_to_article(item: dict[str, Any], keyword: str) -> Article | None:
     original = item.get("originallink") or ""
     return Article(
         id=article_id, keyword=keyword, title=title,
-        press=press_from_url(original or link),
+        press=item.get("press") or press_from_url(original or link),
         pub_date=parse_pub_date(item["pubDate"]).isoformat(),
         naver_link=link, originallink=original,
         description=strip_html(item.get("description", "")),
@@ -134,11 +135,17 @@ def collect(settings: Settings, db: Database, client: NaverNewsClient | None = N
     run_id = db.start_run()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.max_age_days)
 
-    for keyword in settings.keywords:
+    sources: list[tuple[str, Callable[[], list[dict]]]] = [
+        (kw, (lambda kw=kw: list(client.iter_items(kw, settings.per_keyword)))) for kw in settings.keywords
+    ]
+    if settings.sections:
+        sources.append(("섹션:IT/과학", lambda: crawl_sections(settings.sections)))
+
+    for keyword, load in sources:
         if progress:
             progress(keyword)
         try:
-            items = list(client.iter_items(keyword, settings.per_keyword))
+            items = load()
         except Exception as exc:
             report.errors.append(f"{keyword}: {exc}")
             log.error("%s", report.errors[-1])

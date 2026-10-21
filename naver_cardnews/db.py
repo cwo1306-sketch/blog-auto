@@ -32,8 +32,21 @@ CREATE TABLE IF NOT EXISTS articles (
     card_folder     TEXT NOT NULL DEFAULT '',
     post_url        TEXT NOT NULL DEFAULT '',
     memo            TEXT NOT NULL DEFAULT '',
-    posted_at       TEXT
+    posted_at       TEXT,
+    body            TEXT,                       -- 크롤링한 기사 본문 (원고 생성 대상만)
+    body_fetched_at TEXT
 );
+CREATE TABLE IF NOT EXISTS drafts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id  TEXT NOT NULL REFERENCES articles(id),
+    version     INTEGER NOT NULL,               -- 기사별 1부터
+    source      TEXT NOT NULL,                  -- ai | excel
+    script_json TEXT NOT NULL,
+    errors_json TEXT NOT NULL DEFAULT '[]',     -- validate 결과
+    usage_json  TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_drafts_article ON drafts(article_id, version);
 CREATE INDEX IF NOT EXISTS idx_articles_title_key ON articles(title_key);
 CREATE INDEX IF NOT EXISTS idx_articles_pub_date ON articles(pub_date);
 CREATE INDEX IF NOT EXISTS idx_articles_cluster ON articles(cluster_id);
@@ -91,6 +104,15 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """기존 DB에 새 열 추가 (CREATE TABLE IF NOT EXISTS 는 열을 더하지 않는다)."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(articles)")}
+        for col, ddl in (("body", "TEXT"), ("body_fetched_at", "TEXT")):
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE articles ADD COLUMN {col} {ddl}")
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
@@ -200,6 +222,53 @@ class Database:
         values.append(article_id)
         self.conn.execute(f"UPDATE articles SET {', '.join(fields)} WHERE id=?", values)
         return True
+
+    # --- 본문·원고 ---------------------------------------------------------
+    def set_body(self, article_id: str, body: str, press: str | None = None) -> None:
+        self.conn.execute("UPDATE articles SET body=?, body_fetched_at=?, press=COALESCE(NULLIF(?, ''), press) WHERE id=?",
+                          (body, utcnow(), press or "", article_id))
+        self.conn.commit()
+
+    def draft_candidates(self, limit: int) -> list[sqlite3.Row]:
+        """원고가 아직 없는 '대기' 대표 기사를 점수(여러 매체가 다룬 이슈) 순으로."""
+        return self.conn.execute(
+            "SELECT a.* FROM articles a WHERE a.status IN ('대기', '승인') AND a.is_representative=1 "
+            "AND NOT EXISTS (SELECT 1 FROM drafts d WHERE d.article_id=a.id) "
+            "ORDER BY a.score DESC, a.pub_date DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    def latest_draft(self, article_id: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM drafts WHERE article_id=? ORDER BY version DESC LIMIT 1", (article_id,)
+        ).fetchone()
+
+    def drafts_for_export(self) -> list[sqlite3.Row]:
+        """기사별 최신 원고 + 기사 메타. 상태 우선순위 → 점수 순."""
+        return self.conn.execute(
+            "SELECT d.*, a.title AS article_title, a.status, a.score, a.press, a.naver_link, a.memo FROM drafts d "
+            "JOIN articles a ON a.id=d.article_id "
+            "WHERE d.version=(SELECT MAX(version) FROM drafts x WHERE x.article_id=d.article_id) "
+            "ORDER BY CASE a.status WHEN '승인' THEN 0 WHEN '대기' THEN 1 WHEN '제작완료' THEN 2 ELSE 3 END, a.score DESC"
+        ).fetchall()
+
+    def bodies_for_export(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT id, title, press, pub_date, naver_link, body, body_fetched_at FROM articles WHERE body IS NOT NULL "
+            "ORDER BY body_fetched_at DESC"
+        ).fetchall()
+
+    def save_draft(self, article_id: str, script: dict, errors: list[str], source: str, usage: dict | None = None) -> int:
+        import json
+        row = self.conn.execute("SELECT COALESCE(MAX(version), 0) FROM drafts WHERE article_id=?", (article_id,)).fetchone()
+        version = int(row[0]) + 1
+        self.conn.execute(
+            "INSERT INTO drafts (article_id, version, source, script_json, errors_json, usage_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (article_id, version, source, json.dumps(script, ensure_ascii=False),
+             json.dumps(errors, ensure_ascii=False), json.dumps(usage or {}, ensure_ascii=False), utcnow()),
+        )
+        self.conn.commit()
+        return version
 
     # --- 사용 이미지 기록 --------------------------------------------------
     def image_used(self, source: str, external_id: str) -> bool:

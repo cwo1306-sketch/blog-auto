@@ -87,6 +87,23 @@ Haiku 판정은 `ANTHROPIC_API_KEY`가 있을 때만 켜지고, 없으면 경계
 python -m pytest -q
 ```
 
+## 원고 생성 → 엑셀 '원고'·'본문' 시트 (사람이 고친 문구가 최종)
+
+```bash
+python -m naver_cardnews run            # import(상태·원고 수정 반입) → collect(API + IT/과학 섹션) → draft(상위 N) → export
+python -m naver_cardnews draft --top 10 # 대기 중 점수 상위 N건만: 본문 크롤링 → Sonnet 원고·캡션·해시태그 → 검수 → drafts 저장
+```
+
+- **수집 소스**: 키워드 API + `n.news.naver.com/section/105`(IT/과학) 첫 화면(40~50건, `NAVER_CARDNEWS_SECTIONS`로 조정, 비우면 끔).
+  섹션 기사는 같은 니치 필터·중복 제거·Haiku 판정을 탄다(키워드 열에 `섹션:IT/과학`).
+- **원고 대상**: 상태 `대기`/`승인`인 **대표 기사**(중복 클러스터는 대표만) 중 점수 상위 N건, 이미 원고가 있으면 건너뜀. 기사당 토큰 실측 입력 7.7k / 출력 3.4k(재작성 포함) ≈ 65원.
+- **엑셀 시트**
+  - `원고`: 한 기사 한 행. 표지1~3(강조 줄은 앞에 `*`), 장마다 유형(photo/stat)·제목·본문·수치·단위·라벨·인용·검색어·개념, 마무리 요약·질문, **캡션, 해시태그**, 검수오류(빨강), 원고출처(ai/excel), 버전, 메모. 노란 열만 편집.
+  - `본문`: 크롤링한 기사 원문(오류·수치 대조용).
+  - `뉴스큐`: 기존 큐. `상태`를 `승인`으로.
+- **반입 규칙**: 다음 실행 때 `원고` 시트에서 바뀐 행은 새 버전(source=`excel`)으로 저장하고 재검수해 `검수오류` 열에 표시한다. 제작(`make_card.py`)은 최신 버전을 쓰므로 **엑셀 수정본이 최종**이다. 검수 오류가 남아 있으면 제작을 멈추고 memo에 남긴다(`--force`로 무시 가능).
+- **캡션 프롬프트**: 1줄 훅(표지와 다른 표현) / 핵심 3가지 `•` / 댓글 유도 / `출처: 언론사`, 350자 이내. 해시태그 8~10개, 앞 3개 고정(#AI뉴스 #AI #테크뉴스).
+
 ## 3단계 부품: 스톡 검색 + 비전 선택 + used_images + 숫자 카드
 
 설계는 `docs/STAGE3_DESIGN.md`. 이 저장소에는 로컬 `make_card.py`에 끼울 **부품**이 들어 있다.
@@ -119,7 +136,7 @@ python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용
 
 | 파일 | 바뀐 점 |
 |---|---|
-| `make_card.py` | stat 장 분기(검증 실패 시 photo 강등, 최대 2장·연속 금지), 비전 검수로 사진 선택, used_images로 게시물 간 재사용 금지, 후보 전무 시 재검색 → 단색 강등(원본은 IndexError), 검수 실패 원고는 렌더하지 않음, meta.json에 비전 판정 기록, `articles.status='제작완료'`·`card_folder` 갱신 |
+| `make_card.py` | DB drafts 최신 버전(엑셀 수정본) 우선·본문 재사용, 검수 오류 시 중단(`--force`), stat 장 분기(검증 실패 시 photo 강등, 최대 2장·연속 금지), 비전 검수로 사진 선택, used_images로 게시물 간 재사용 금지, 후보 전무 시 재검색 → 단색 강등(원본은 IndexError), 검수 실패 원고는 렌더하지 않음, meta.json에 비전 판정 기록, `articles.status='제작완료'`·`card_folder` 갱신 |
 | `naver_article.py` | 사진 설명·기자 이메일·'무단 전재' 꼬리 제거, 빈 제목/본문이면 예외, og 메타 폴백, 재시도, `id(oid_aid)` 포함 |
 | `pexels.py` | `naver_cardnews.stock` 래퍼. 원본(1350px 이상) 다운로드, 가로·저해상도 제외, 작가당 상한, Unsplash 키 있으면 자동 추가 |
 | `render.py` | `document.fonts.ready`를 실제로 await(원본은 Promise 미대기), stat/plain 장 렌더, 숫자 넘침 자동 축소, 폰트 로딩 상태 QA, Pillow 구 API 회피, `CHROMIUM_PATH` |

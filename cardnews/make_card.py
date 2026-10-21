@@ -1,4 +1,8 @@
-"""Usage: .venv/bin/python make_card.py <naver news url> [--db data/news.db]
+"""Usage: .venv/bin/python make_card.py <naver news url> [--db data/news.db] [--force]
+
+원고 우선순위: DB drafts 의 최신 버전(엑셀에서 고친 source='excel' 포함) → 없으면 writer 로 새로 생성.
+엑셀 수정본이 최종이므로 drafts 가 있으면 writer 를 다시 부르지 않는다. 검수 오류가 남아 있으면 중단하고
+memo 에 남긴다(--force 로 무시하고 렌더 가능).
 
 원본 대비 개선:
 - 장 유형 분기: writer가 slide_type="stat" + stat{} 을 내면 숫자 카드(사진 없음). 검증 실패 시 photo로 강등
@@ -99,29 +103,48 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
     return None, log
 
 
-def main(url: str, db_path: str) -> str:
-    import validate  # 로컬 프로젝트 모듈 (이 저장소에는 없음) — 호출 시점에 import 해 배치·테스트가 모듈 부재로 죽지 않게
+def main(url: str, db_path: str, force: bool = False) -> str:
+    import validate
     import writer
 
     t0 = time.time()
-    article = naver_article.fetch(url)
-    aid = article["id"]
+    aid = naver_article.article_id(url)
     out = os.path.join(ROOT, "output", aid)
     os.makedirs(out, exist_ok=True)
     notes: list[str] = []
 
-    script = writer.write(article)
-    errors = validate.check(script, article["body"])
-    for _ in range(MAX_REWRITES):
-        if not errors:
-            break
-        script = writer.write(article, script, errors)
+    db = Database(db_path)
+    row = db.get(aid)
+    draft = db.latest_draft(aid)
+    if row is not None and row["body"]:
+        article = {"url": url, "id": aid, "title": row["title"], "press": row["press"],
+                   "date": row["pub_date"][:10], "body": row["body"]}
+    else:
+        article = naver_article.fetch(url)
+        if row is not None:
+            db.set_body(aid, article["body"], article.get("press"))
+
+    if draft is not None:
+        script = json.loads(draft["script_json"])
         errors = validate.check(script, article["body"])
-    if errors:
-        raise SystemExit(f"원고 검수 실패({MAX_REWRITES}회 재작성 후): {errors}")
+        notes.append(f"원고: drafts v{draft['version']} ({draft['source']})")
+    else:
+        script = writer.write(article)
+        errors = validate.check(script, article["body"])
+        for _ in range(MAX_REWRITES):
+            if not errors:
+                break
+            script = writer.write(article, script, errors)
+            errors = validate.check(script, article["body"])
+        db.save_draft(aid, {k: v for k, v in script.items() if k != "_usage"}, errors, "ai", script.get("_usage") or {})
+        notes.append("원고: writer 신규 생성")
+    if errors and not force:
+        db.update_review(aid, None, f"검수 오류 {len(errors)}건 — 원고 시트 확인", None, None)
+        db.conn.commit()
+        db.close()
+        raise SystemExit(f"원고 검수 오류 {len(errors)}건 (엑셀 '원고' 시트에서 수정 후 재실행, 또는 --force): {errors}")
     _normalize_slide_types(script, article["body"], notes)
 
-    db = Database(db_path)
     scorer = HaikuScorer(keys.load("Anthropic-jachi", "ANTHROPIC_API_KEY"))
     images: list[str | None] = []
     image_log: list[dict] = []
@@ -167,5 +190,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("url")
     ap.add_argument("--db", default=os.path.join(ROOT, "data", "news.db"))
+    ap.add_argument("--force", action="store_true", help="검수 오류가 있어도 렌더")
     a = ap.parse_args()
-    main(a.url, a.db)
+    main(a.url, a.db, a.force)

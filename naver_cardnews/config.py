@@ -53,6 +53,8 @@ class Settings:
     pexels_api_key: str = ""
     unsplash_access_key: str = ""
     images_dir: Path = PROJECT_ROOT / "data" / "images"
+    sections: list[str] = field(default_factory=lambda: ["105"])   # 크롤링할 네이버 뉴스 섹션 (105=IT/과학). 비우면 끔
+    draft_top: int = 10            # 수집 후 원고를 미리 만들 상위 건수
 
 
 def _clean_list(words) -> list[str]:
@@ -101,4 +103,6 @@ def load_settings(env_file: Path | None = None, keywords_file: Path | None = Non
         anthropic_api_key=env("ANTHROPIC_API_KEY", ""),
         pexels_api_key=env("PEXELS_API_KEY", ""),
         unsplash_access_key=env("UNSPLASH_ACCESS_KEY", ""),
+        sections=[s for s in env("NAVER_CARDNEWS_SECTIONS", "105").split(",") if s.strip()],
+        draft_top=int(env("NAVER_CARDNEWS_DRAFT_TOP", "10")),
     )

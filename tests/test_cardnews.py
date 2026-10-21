@@ -204,7 +204,7 @@ def test_writer_parse_and_normalize():
 
 
 def test_writer_write_uses_client_and_records_usage(monkeypatch):
-    import writer
+    from naver_cardnews import writer
     from types import SimpleNamespace as NS
     payload = json.dumps(FULL, ensure_ascii=False)
     captured = {}

@@ -1,5 +1,6 @@
 """사용법:
-    python -m naver_cardnews run        # import → collect → export (평소엔 이것만)
+    python -m naver_cardnews run        # import(엑셀→DB) → collect(API+섹션) → draft(상위 N 원고) → export (평소엔 이것만)
+    python -m naver_cardnews draft --top 10   # 대기 상위 N건 본문 크롤링 + 원고·캡션 생성 → '원고' 시트
     python -m naver_cardnews collect    # 수집 + 중복 제거 → SQLite
     python -m naver_cardnews export     # SQLite → 엑셀 재생성
     python -m naver_cardnews import     # 엑셀의 상태/메모 → SQLite
@@ -18,13 +19,15 @@ from pathlib import Path
 from .collect import collect
 from .config import load_settings
 from .db import Database
-from .queue import ExcelLocked, export_queue, import_queue
+from .queue import ExcelLocked, export_queue, import_drafts, import_queue
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="naver_cardnews", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["run", "collect", "export", "import", "stats", "pick-image", "stat-card"])
+    p.add_argument("command", choices=["run", "collect", "draft", "export", "import", "stats", "pick-image", "stat-card"])
+    p.add_argument("--top", type=int, help="draft: 원고를 만들 상위 건수 (기본 NAVER_CARDNEWS_DRAFT_TOP=10, run 에서는 0이면 생략)")
+    p.add_argument("--no-sections", action="store_true", help="섹션 페이지 크롤링 끄기")
     p.add_argument("--keywords", type=Path, help="키워드 YAML (기본 keywords.yaml)")
     p.add_argument("--db", type=Path)
     p.add_argument("--out", type=Path, help="엑셀 경로")
@@ -62,6 +65,10 @@ def main(argv: list[str] | None = None) -> int:
         s.max_age_days = args.days
     if args.no_judge:
         s.judge_enabled = s.niche_judge_enabled = False
+    if args.no_sections:
+        s.sections = []
+    if args.top is not None:
+        s.draft_top = args.top
 
     if args.command in ("run", "collect") and not (s.client_id and s.client_secret):
         print("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 가 비어 있습니다. .env.example을 .env로 복사해 채우세요.",
@@ -82,12 +89,22 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command in ("run", "import"):
             n = import_queue(db, s.output_path)
-            print(f"엑셀 → DB 반영 {n}건")
+            m = import_drafts(db, s.output_path)
+            print(f"엑셀 → DB 반영: 상태 {n}건, 원고 수정 {m}건")
         if args.command in ("run", "collect"):
             rep = collect(s, db, judge=judge, progress=lambda k: print("  수집:", k, file=sys.stderr))
             print(rep.summary())
             for e in rep.errors:
                 print("  오류:", e, file=sys.stderr)
+        if args.command == "draft" or (args.command == "run" and s.draft_top > 0):
+            if not s.anthropic_api_key:
+                print("원고 생성에 ANTHROPIC_API_KEY 가 필요합니다", file=sys.stderr)
+            else:
+                from . import writer
+                from .draft import draft_top
+                writer.configure(s.anthropic_api_key)
+                rep = draft_top(db, s.draft_top, progress=lambda t: print("  원고:", t, file=sys.stderr))
+                print(rep.summary())
         if args.command in ("run", "export"):
             n = export_queue(db, s.output_path)
             print(f"DB → 엑셀 {n}행 → {s.output_path}")
