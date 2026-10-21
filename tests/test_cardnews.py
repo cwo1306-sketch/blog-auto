@@ -120,3 +120,103 @@ def test_make_batch_continues_after_failure(tmp_path, monkeypatch):
     assert db.get("001_1")["status"] == "승인" and db.get("001_1")["memo"].startswith("제작 실패")
     assert db.get("001_2")["status"] == "제작완료" and db.get("001_2")["card_folder"] == "output/001_2"
     assert db.get("001_3")["status"] == "대기"
+
+
+ARTICLE_BODY = ("카카오는 21일 이미지를 이해하는 비전 인코더 2종을 오픈소스로 공개했다. 회사 자료에 따르면 벤치마크에서 "
+                "동급 모델 대비 정확도가 12.5% 높았다. 카카오는 올해 3분기에 이를 자사 서비스에 적용할 계획이며, "
+                "연구에 투입된 인력은 40명이다. 관련 투자 규모는 300억원이다.")
+
+FULL = {
+    "cover": {"lines": [{"text": "카카오가 만든", "highlight": False}, {"text": "AI의 눈", "highlight": True}],
+              "image_queries": ["abstract glass lens light", "camera aperture macro dark"], "image_concept": "이미지를 이해하는 시각 모델"},
+    "slides": [
+        {"slide_type": "photo", "title": "무엇을 공개했나", "body": "카카오가 이미지를 이해하는 비전 인코더 2종을 오픈소스로 공개했습니다. 회사 자료에 따르면 동급 모델보다 정확도가 높다고 합니다. 누구나 가져다 쓸 수 있습니다.",
+         "image_queries": ["glowing data streams converging", "server room corridor dark"], "image_concept": "공개, 개방"},
+        {"slide_type": "stat", "title": "얼마나 좋아졌나", "body": "회사 자료 기준 동급 모델 대비 정확도 차이입니다.",
+         "stat": {"value": "12.5", "unit": "%", "label": "동급 대비 정확도 향상", "source_quote": "동급 모델 대비 정확도가 12.5% 높았다"},
+         "image_queries": [], "image_concept": ""},
+        {"slide_type": "photo", "title": "언제 쓰이나", "body": "카카오는 올해 3분기에 이 모델을 자사 서비스에 순차적으로 적용할 계획입니다. 이용자는 사진 검색과 추천에서 먼저 변화를 체감하게 될 전망입니다.",
+         "image_queries": ["abstract timeline light path", "city skyline night minimal"], "image_concept": "적용, 전환"},
+        {"slide_type": "photo", "title": "왜 중요한가", "body": "국내 기업이 핵심 부품을 통째로 공개한 것은 드문 일입니다. 연구 인력 40명이 참여했으며, 국내 AI 생태계 확산 효과가 기대된다고 회사는 설명했습니다.",
+         "image_queries": ["network nodes glowing abstract", "circuit board macro dark"], "image_concept": "생태계, 연결"},
+    ],
+    "outro": {"summary": "카카오가 이미지를 이해하는 AI 핵심 부품을 공개했습니다", "question": "오픈소스 AI, 직접 써볼 생각 있나요?"},
+    "caption": "카카오가 비전 인코더를 공개했습니다. 동급 모델보다 정확도가 높다고 합니다.\n자세한 내용은 카드에서 확인하세요.\n출처: 한국경제",
+    "hashtags": ["#AI", "#카카오", "#비전인코더", "#오픈소스", "#인공지능", "#테크뉴스", "#AI뉴스", "#멀티모달"],
+}
+
+
+def test_validate_passes_good_script():
+    import copy
+    import validate
+    assert validate.check(copy.deepcopy(FULL), ARTICLE_BODY) == []
+
+
+def test_validate_catches_unit_mismatch_stat_rules_queries():
+    import copy
+    import validate
+    bad = copy.deepcopy(FULL)
+    bad["slides"][0]["body"] = bad["slides"][0]["body"].replace("2종", "2개")           # 단위 다름
+    bad["slides"][2]["body"] = bad["slides"][2]["body"].replace("3분기", "4분기")        # 원문에 없는 수치
+    bad["slides"][0]["image_queries"] = ["nvidia chip closeup", "server room"]          # 브랜드 단어
+    bad["slides"][3]["slide_type"] = "stat"
+    bad["slides"][3]["stat"] = {"value": "300", "unit": "억원", "label": "투자 규모", "source_quote": "관련 투자 규모는 300억원이다"}
+    bad["hashtags"] = ["AI", "#카카오"]
+    bad["caption"] = "출처 없음"
+    errs = validate.check(bad, ARTICLE_BODY)
+    joined = "\n".join(errs)
+    assert "단위가 원문과 다름" in joined and "'2개'" in joined
+    assert "'4분기'" in joined
+    assert "브랜드·인물·로고 단어 ['nvidia']" in joined
+    assert "stat 연속 금지" not in joined and "5장: stat" not in joined   # 3장 stat, 4장 photo, 5장 stat → 연속 아님, 2장 이내
+    assert "hashtags 2개" in joined and "출처:" in joined
+
+
+def test_validate_stat_limits():
+    import copy
+    import validate
+    bad = copy.deepcopy(FULL)
+    bad["slides"][0]["slide_type"] = "stat"
+    bad["slides"][0]["stat"] = {"value": "2", "unit": "종", "label": "공개 모델 수", "source_quote": "비전 인코더 2종을 오픈소스로 공개했다"}
+    errs = "\n".join(validate.check(bad, ARTICLE_BODY))
+    assert "2장(표지 다음)은 photo" in errs and "3장: stat 연속 금지" in errs
+
+
+def test_writer_parse_and_normalize():
+    import writer
+    text = '설명입니다.\n```json\n' + json.dumps({
+        "cover": {"lines": [{"text": "a", "highlight": True}], "image_query": "old style query"},
+        "slides": [{"title": "t", "body": "b", "image_query": "q"}] * 4,
+        "outro": {"summary": "s", "question": "q"}, "caption": "c\n출처: x", "hashtags": ["#a"],
+    }, ensure_ascii=False) + "\n```\n끝."
+    s = writer.normalize_script(writer.parse_script(text))
+    assert s["cover"]["image_queries"] == ["old style query"] and s["cover"]["image_query"] == "old style query"
+    assert all(sl["slide_type"] == "photo" and sl["stat"] is None for sl in s["slides"])
+    try:
+        writer.parse_script("JSON 없음"); assert False
+    except writer.WriterError:
+        pass
+    try:
+        writer.normalize_script({"cover": {}, "slides": [], "outro": {}, "caption": "", "hashtags": []}); assert False
+    except writer.WriterError as exc:
+        assert "4장" in str(exc)
+
+
+def test_writer_write_uses_client_and_records_usage(monkeypatch):
+    import writer
+    from types import SimpleNamespace as NS
+    payload = json.dumps(FULL, ensure_ascii=False)
+    captured = {}
+
+    class Msgs:
+        def create(self, **kw):
+            captured.update(kw)
+            return NS(stop_reason="end_turn", content=[NS(type="text", text=payload)],
+                      usage=NS(input_tokens=1200, output_tokens=900))
+    monkeypatch.setattr(writer, "_client", lambda: NS(messages=Msgs()))
+    s = writer.write({"press": "한국경제", "date": "2026-10-21", "title": "t", "body": ARTICLE_BODY})
+    assert s["_usage"]["output_tokens"] == 900 and captured["model"] == writer.MODEL
+    assert "slide_type" in captured["system"] and "image_queries" in captured["system"]
+    s2 = writer.write({"press": "p", "date": "d", "title": "t", "body": "b"}, previous=s, errors=["3장 본문 130자"])
+    assert "이전 원고" in captured["messages"][0]["content"] and "_usage" not in captured["messages"][0]["content"]
+    assert s2["_usage"]["rewrite"] is True

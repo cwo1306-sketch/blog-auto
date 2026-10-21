@@ -144,6 +144,7 @@ def main(url: str, db_path: str) -> str:
             "script": script, "images": image_log, "cards": files,
             "qa": {"script_errors": errors, "notes": notes, "render": qa,
                    "vision_calls": scorer.calls, "seconds": round(time.time() - t0, 1)},
+            "usage": {"writer": script.pop("_usage", None), "vision_calls": scorer.calls},
         }
         with open(os.path.join(out, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
