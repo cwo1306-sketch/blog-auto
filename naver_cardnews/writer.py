@@ -19,7 +19,7 @@ import warnings
 
 import anthropic
 
-from .formats import FORMATS, format_rules
+from .formats import FORMATS, MAX_BODY_SLIDES, body_slide_count, format_rules
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,8 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
 - 한자 약어(中·美·日·韓 등)를 쓰지 말고 한글로 쓴다.
 - 누가 주장한 수치인지(회사 자료인지, 공식 통계인지) 출처 주체를 본문에 밝힌다.
 - 표지: 2~3줄, 줄당 공백 포함 12자 이내. 가장 강한 훅 1~2줄은 highlight=true.
-- 본문 장: 정확히 4장. 장 구성은 format(아래 '구성 템플릿')이 정한다. 모든 장은 존댓말 뉴스체 '~입니다/~습니다'.
+- 본문 장 수는 format이 정한다(4~6장). 장 구성도 format을 따른다. 말투는 친근한 해요체('~해요/~인데요/~거든요')를 기본으로 하되
+  stat·compare·quote 장은 간결체. 네이버 언론사 카드뉴스처럼 수치 하나를 표지 부제로 쓰고, 어려운 원리는 반드시 일상 비유로 한 번 풀어 준다.
   · photo 장: title(공백 포함 14자 이내), body(공백 포함 90~120자). 사진 지시 필요.
   · stat 장: 핵심이 숫자 하나일 때. stat = {value: 숫자만(쉼표 허용, 소수점 둘째 자리까지), unit: 원문 단위, label: 14자 이내 설명,
     source_quote: 그 수치가 든 원문 문장을 토씨 하나 바꾸지 말고 그대로 복사}. title·body도 채운다. explainer에서는 최대 2장, 연속 금지, 2장은 photo.
@@ -45,6 +46,7 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
   · term 장: title=용어(10자) + label=한 줄 정의(30자) + body=비유 설명(60~110자). 사진 없음.
   · qa 장: title=질문(30자, 물음표로 끝) + body=답(60~120자, 결론 먼저). 사진 없음.
   · compare 장: title=비교 축(14자) + compare={left:{label(8자), points[2~3, 각 22자]}, right:{label, points}}. 사진 없음.
+  · quote 장: 기사에 실제로 있는 발언만. title=발언 요지(14자), body=인용문 그대로(따옴표 없이, 40~110자), label='이름 소속/직함'(20자). 사진 없음.
   · 사진 없는 장(list/term/qa/compare)은 image_queries를 빈 배열로, image_concept은 빈 문자열로 둔다.
 - 사진 지시(photo 장과 표지): image_queries는 영어 검색어 2개. 첫째는 은유형(abstract light, glass lens, data stream 같은 추상 장면),
   둘째는 구체형(server room corridor, circuit macro, city at night 같은 실제 장면). 각 2~5단어.
@@ -57,9 +59,9 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
 - hashtags: 8~10개, '#' 포함. 앞 3개는 고정(#AI뉴스 #AI #테크뉴스), 나머지는 기사 고유 키워드(기업·기술·제품명 가능).
 
 JSON만 출력한다. 스키마:
-{"format":"explainer"|"listicle"|"numbers"|"term"|"qa"|"compare",
+{"format":"debate"|"glossary"|"scene"|"reveal"|"qa"|"numbers"|"explainer",
  "cover":{"lines":[{"text":str,"highlight":bool}],"image_queries":[str,str],"image_concept":str},
- "slides":[{"slide_type":"photo"|"stat"|"list"|"term"|"qa"|"compare","title":str,"body":str,"label":str,
+ "slides":[{"slide_type":"photo"|"stat"|"list"|"term"|"qa"|"compare"|"quote","title":str,"body":str,"label":str,
             "image_queries":[str,str],"image_concept":str,
             "stat":{"value":str,"unit":str,"label":str,"source_quote":str} | null,
             "compare":{"left":{"label":str,"points":[str]},"right":{"label":str,"points":[str]}} | null}],
@@ -118,8 +120,12 @@ def normalize_script(script: dict) -> dict:
     for key in ("cover", "slides", "outro", "caption", "hashtags"):
         if key not in script:
             raise WriterError(f"원고에 '{key}' 가 없습니다")
-    if not isinstance(script["slides"], list) or len(script["slides"]) != SLIDES:
-        raise WriterError(f"본문 장은 {SLIDES}장이어야 합니다 (받음: {len(script.get('slides', []))})")
+    fmt = script.get("format") if script.get("format") in FORMATS else "explainer"
+    n = len(script["slides"]) if isinstance(script["slides"], list) else 0
+    if not 4 <= n <= MAX_BODY_SLIDES:
+        raise WriterError(f"본문 장은 4~{MAX_BODY_SLIDES}장이어야 합니다 (받음: {n})")
+    if n != body_slide_count(fmt):
+        raise WriterError(f"format '{fmt}'의 본문 장 수는 {body_slide_count(fmt)}장인데 {n}장을 받았습니다")
 
     def fix_image(item: dict) -> None:
         q = item.get("image_queries") or ([item["image_query"]] if item.get("image_query") else [])
@@ -136,7 +142,7 @@ def normalize_script(script: dict) -> dict:
             kind = "photo"
         if kind == "compare" and not s.get("compare"):
             kind = "photo"
-        if kind not in ("photo", "stat", "list", "term", "qa", "compare"):
+        if kind not in ("photo", "stat", "list", "term", "qa", "compare", "quote"):
             kind = "photo"
         s["slide_type"] = kind
         if kind != "stat":

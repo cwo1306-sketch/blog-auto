@@ -31,7 +31,7 @@ def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num:
     """2026 템플릿: 사진은 풀블리드가 아니라 .photo 액자 안에, 본문 장은 큰 번호(.num-big)를 단다."""
     photo = f"""<div class="photo"><div class="bg" style="background-image:url('{bg}')"></div></div>""" if bg else ""
     num_big = f'<div class="num-big">{num}</div>' if num else ""
-    plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare")) else " plain"
+    plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <link rel="stylesheet" href="../../templates/card.css"></head>
 <body class="{kind}{plain}">
@@ -72,6 +72,13 @@ def _qa_inner(num: str, s: dict) -> str:
             f'<div class="a"><span class="badge badge-a">A</span><p>{escape(s.get("body", ""))}</p></div></div>')
 
 
+def _quote_inner(s: dict) -> str:
+    return (f'<div class="text"><div class="qmark">“</div>'
+            f'<blockquote>{escape(s.get("body", ""))}</blockquote>'
+            f'<div class="who">{escape(s.get("label", ""))}</div>'
+            f'<div class="gist">{escape(s.get("title", ""))}</div></div>')
+
+
 def _compare_inner(s: dict) -> str:
     cmp = s.get("compare") or {"left": {}, "right": {}}
     def col(side: dict, cls: str) -> str:
@@ -104,6 +111,8 @@ def build_pages(script: dict, images: list[str | None], source: str) -> list[str
             pages.append(_page(_qa_inner(str(i - 1), s), None, "qa", source, f"{i}/{total}"))
         elif kind == "compare" and s.get("compare"):
             pages.append(_page(_compare_inner(s), None, "compare", source, f"{i}/{total}"))
+        elif kind == "quote":
+            pages.append(_page(_quote_inner(s), None, "quote", source, f"{i}/{total}"))
         else:
             inner = f'<div class="text"><h2>{escape(s["title"])}</h2><p>{escape(s["body"])}</p></div>'
             pages.append(_page(inner, images[i - 1], "slide", source, f"{i}/{total}", num=num))
@@ -167,7 +176,7 @@ def _contrast_dark_text(bg_png: str, text_lum: float) -> float:
 
 
 def _kind(doc: str) -> str:
-    for k in ("cover", "stat", "outro", "list", "term", "qa", "compare", "slide"):
+    for k in ("cover", "stat", "outro", "list", "term", "qa", "compare", "quote", "slide"):
         if f'<body class="{k}' in doc:
             return k
     return "slide"
@@ -198,7 +207,7 @@ def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
             box = page.evaluate(LAYOUT_JS)
             issues = []
             contrast = None
-            if kind not in ("stat", "list", "term", "qa", "compare"):   # 단색 배경 장은 대비 측정 생략
+            if kind not in ("stat", "list", "term", "qa", "compare", "quote"):   # 단색 배경 장은 대비 측정 생략
                 page.evaluate("document.body.classList.add('notext')")
                 bg_png = os.path.join(out_dir, f".bg_text_{n:02d}.png")
                 page.screenshot(path=bg_png, clip={"x": box["x"], "y": box["y"],

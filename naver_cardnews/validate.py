@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 
+from .formats import FORMATS, body_slide_count
 from .stat_card import Stat, StatError, validate_stat
 
 LIMITS = {"cover_line": 12, "title": 14, "body": (80, 125), "summary": (20, 45), "question": 30,
@@ -25,7 +26,10 @@ TYPE_LIMITS = {
     "term":    {"title": 10, "body": (50, 115), "label": 32},
     "qa":      {"title": 32, "body": (50, 125)},
     "compare": {"title": 14, "body": (0, 125), "cmp_label": 8, "points": (2, 3), "point": 24},
+    "quote":   {"title": 14, "body": (30, 115), "label": 22},
 }
+# 포맷별 photo 본문 길이 예외 (현장 사례형은 한 장 한 문장)
+FORMAT_PHOTO_BODY = {"scene": (25, 75)}
 NO_PHOTO_TYPES = {"list", "term", "qa", "compare", "stat"}
 NUM_UNIT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([가-힣%a-zA-Z]{0,3})")
 HANJA = re.compile(r"[一-鿿]")
@@ -113,6 +117,11 @@ def check(script: dict, article_body: str) -> list[str]:
     errors += check_queries("표지", script["cover"])
 
     fmt = script.get("format", "explainer")
+    if fmt not in FORMATS:
+        errors.append(f"알 수 없는 format '{fmt}'")
+        fmt = "explainer"
+    if len(script["slides"]) != body_slide_count(fmt):
+        errors.append(f"format '{fmt}'은 본문 {body_slide_count(fmt)}장인데 {len(script['slides'])}장")
     stat_count, prev_stat = 0, False
     for i, s in enumerate(script["slides"], start=2):
         kind = s.get("slide_type", "photo")
@@ -121,6 +130,8 @@ def check(script: dict, article_body: str) -> list[str]:
         if len(s.get("title", "")) > tl["title"]:
             errors.append(f"{i}장 제목 {len(s['title'])}자 > {tl['title']}자 ({kind})")
         lo, hi = tl["body"]
+        if kind == "photo" and fmt in FORMAT_PHOTO_BODY:
+            lo, hi = FORMAT_PHOTO_BODY[fmt]
         blen = len(s.get("body", ""))
         if not lo <= blen <= hi:
             errors.append(f"{i}장 본문 {blen}자 (허용 {lo}~{hi}자, {kind})")
@@ -129,6 +140,13 @@ def check(script: dict, article_body: str) -> list[str]:
                 errors.append(f"{i}장 term: 한 줄 정의(label) 필요")
             elif len(s["label"]) > tl["label"]:
                 errors.append(f"{i}장 정의 {len(s['label'])}자 > {tl['label']}자")
+        if kind == "quote":
+            if not s.get("label"):
+                errors.append(f"{i}장 quote: 발언자(label) 필요")
+            elif len(s["label"]) > tl["label"]:
+                errors.append(f"{i}장 발언자 {len(s['label'])}자 > {tl['label']}자")
+            if s.get("body") and s["body"].replace(" ", "") not in article_body.replace(" ", "").replace("\n", ""):
+                errors.append(f"{i}장 quote: 인용문이 원문에 그대로 없음")
         if kind == "qa" and not s.get("title", "").rstrip().endswith("?"):
             errors.append(f"{i}장 qa: 질문은 물음표로 끝나야 함")
         if kind == "compare":
@@ -150,7 +168,7 @@ def check(script: dict, article_body: str) -> list[str]:
                                    st.get("source_quote", "")), article_text=article_body)
             except StatError as exc:
                 errors.append(f"{i}장 stat: {exc}")
-            if fmt != "numbers":
+            if fmt == "explainer":
                 if i == 2:
                     errors.append("2장(표지 다음)은 photo 여야 함")
                 if prev_stat:

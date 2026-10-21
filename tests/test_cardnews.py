@@ -200,7 +200,7 @@ def test_writer_parse_and_normalize():
     try:
         writer.normalize_script({"cover": {}, "slides": [], "outro": {}, "caption": "", "hashtags": []}); assert False
     except writer.WriterError as exc:
-        assert "4장" in str(exc)
+        assert "4~6장" in str(exc)
 
 
 def test_writer_write_uses_client_and_records_usage(monkeypatch):

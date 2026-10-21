@@ -1,12 +1,15 @@
 /* AI 뉴스 3분 브리핑 — 2026 카드뉴스 템플릿 (타이포 주도 · 종이 톤 · 형광 포인트 · 번호 · 액자 사진 · 그레인)
    로컬 templates/card.css 를 이 파일로 교체한다. 이전 '사진 풀블리드 + 스모크그레이' 시스템은 대체됨. */
 :root {
-  --paper: #F3EEE4;      /* 따뜻한 종이 (쿨그레이 → 웜뉴트럴) */
-  --paper-2: #E9E2D4;
-  --ink: #141414;
-  --ink-2: #4A4842;
-  --muted: #8A867C;
-  --hl: #FFE500;         /* 형광펜 포인트: 글자색이 아니라 '배경 블록'으로만 쓴다 */
+  /* v2.1 (2026-10-21): 인스타 피드에서 눈이 편하도록 전체를 한 톤 연하게. 잉크는 순검정 대신 웜 차콜, 형광은 파스텔 옐로 */
+  --paper: #F8F6F1;      /* 밝은 종이 */
+  --paper-2: #EEEAE2;
+  --ink: #2A2926;        /* 웜 차콜 */
+  --ink-2: #5E5B55;
+  --muted: #948F86;
+  --hl: #FFEF8A;         /* 파스텔 형광펜: 글자색이 아니라 '배경 블록'으로만 쓴다 */
+  --hl-strong: #FFE566;  /* 마무리 장 전면 배경 */
+  --dark: #35332F;       /* 숫자 카드 배경 (순검정 대신) */
   --font: "Pretendard", "Pretendard Variable", "Noto Sans CJK KR", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
   --m: 64px;             /* 안전 여백 (프로필 그리드 3:4 크롭 34px 포함) */
 }
@@ -14,7 +17,7 @@ html, body { margin: 0; padding: 0; }
 body { position: relative; width: 1080px; height: 1350px; overflow: hidden; background: var(--paper); color: var(--ink);
        font-family: var(--font); -webkit-font-smoothing: antialiased; letter-spacing: -0.01em; }
 /* 그레인 */
-body::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .11; mix-blend-mode: multiply;
+body::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .07; mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); }
 body.notext .text, body.notext .pill, body.notext .source, body.notext .page, body.notext .num-big, body.notext .quote { visibility: hidden; }
 
@@ -28,9 +31,10 @@ body.notext .text, body.notext .pill, body.notext .source, body.notext .page, bo
 /* 사진: 풀블리드 대신 액자. 웜 틴트 + 살짝 어둡게 해서 스톡 색감을 한 톤으로 */
 .photo { position: absolute; left: var(--m); right: var(--m); border-radius: 28px; overflow: hidden; background: var(--paper-2);
          box-shadow: 0 0 0 2px var(--ink); }
-.photo .bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: saturate(.85) contrast(1.05); }
-.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(243,238,228,.0) 60%, rgba(243,238,228,.28) 100%),
-                rgba(255, 190, 90, .10); mix-blend-mode: multiply; }
+.photo .bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: saturate(.8) contrast(.98) brightness(1.06); }
+.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(248,246,241,.0) 55%, rgba(248,246,241,.35) 100%),
+                rgba(255, 210, 120, .08); mix-blend-mode: multiply; }
+.photo { box-shadow: 0 0 0 1.5px rgba(42,41,38,.5); }
 .shade, .diag { display: none; }           /* 구 템플릿 요소 무력화 */
 
 /* 형광펜 강조 (writer highlight=true) */
@@ -54,8 +58,8 @@ body.slide.plain .text { top: 300px; }
 body.slide.plain h2 { font-size: 80px; }
 
 /* 숫자 카드: 잉크 배경으로 반전해 캐러셀에 리듬을 준다 */
-body.stat { background: var(--ink); color: var(--paper); }
-body.stat .pill { color: var(--paper); border-color: var(--paper); background: var(--ink); }
+body.stat { background: var(--dark); color: var(--paper); }
+body.stat .pill { color: var(--paper); border-color: var(--paper); background: var(--dark); }
 body.stat .page, body.stat .source { color: var(--paper); opacity: .8; }
 body.stat .text { position: absolute; left: var(--m); right: var(--m); top: 50%; transform: translateY(-58%); }
 body.stat .value { font-weight: 800; line-height: .95; color: var(--hl); letter-spacing: -.04em; white-space: nowrap; }
@@ -70,8 +74,8 @@ body.stat .quote { position: absolute; left: var(--m); right: var(--m); bottom: 
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* 마무리: 형광 블록 전면 — 저장·공유 CTA가 가장 잘 보이는 장 */
-body.outro { background: var(--hl); }
-body.outro .pill { background: var(--hl); }
+body.outro { background: var(--hl-strong); }
+body.outro .pill { background: var(--hl-strong); }
 body.outro .photo { display: none; }
 body.outro .text { position: absolute; left: var(--m); right: var(--m); top: 300px; }
 body.outro .kicker { font-size: 30px; font-weight: 800; letter-spacing: .08em; margin-bottom: 28px; }
@@ -102,7 +106,7 @@ body.term p { margin: 0; font-size: 36px; line-height: 1.55; color: var(--ink-2)
 /* 문답형: Q 카드 위, A 아래 */
 body.qa .text { position: absolute; left: var(--m); right: var(--m); top: 200px; }
 body.qa .badge { display: inline-block; font-size: 26px; font-weight: 800; padding: 8px 16px; border-radius: 10px;
-                 background: var(--ink); color: var(--paper); margin-bottom: 22px; letter-spacing: .04em; }
+                 background: var(--dark); color: var(--paper); margin-bottom: 22px; letter-spacing: .04em; }
 body.qa .badge-a { background: var(--hl); color: var(--ink); }
 body.qa .q h2 { margin: 0 0 56px; font-size: 64px; font-weight: 800; line-height: 1.22; letter-spacing: -0.03em; word-break: keep-all; }
 body.qa .a { padding: 40px 44px; background: var(--paper-2); border-radius: 28px; }
@@ -114,7 +118,7 @@ body.compare h2 { margin: 0 0 40px; font-size: 60px; font-weight: 800; letter-sp
 body.compare .cols { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 body.compare .col { border-radius: 28px; padding: 36px 32px 40px; min-height: 620px; }
 body.compare .col.left  { background: var(--paper-2); box-shadow: 0 0 0 2px var(--ink); }
-body.compare .col.right { background: var(--ink); color: var(--paper); }
+body.compare .col.right { background: var(--dark); color: var(--paper); }
 body.compare .col-label { font-size: 30px; font-weight: 800; letter-spacing: .02em; margin-bottom: 28px; padding-bottom: 18px;
                           border-bottom: 3px solid currentColor; }
 body.compare .col.right .col-label { color: var(--hl); border-color: var(--hl); }
@@ -125,3 +129,11 @@ body.compare .col.right li::before { background: var(--hl); }
 body.compare .vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 84px; height: 84px; border-radius: 50%;
                    background: var(--hl); color: var(--ink); font-size: 28px; font-weight: 800; display: flex; align-items: center;
                    justify-content: center; box-shadow: 0 0 0 4px var(--paper); }
+
+
+/* 인용 카드: 전문가·기관 발언 (연합뉴스 카드뉴스의 인용 장) */
+body.quote .text { position: absolute; left: var(--m); right: var(--m); top: 220px; }
+body.quote .qmark { font-size: 220px; line-height: .6; font-weight: 800; color: var(--hl-strong); height: 120px; }
+body.quote blockquote { margin: 0 0 40px; font-size: 56px; font-weight: 700; line-height: 1.32; letter-spacing: -0.03em; word-break: keep-all; }
+body.quote .who { font-size: 30px; font-weight: 700; color: var(--ink-2); padding-left: 22px; border-left: 6px solid var(--hl-strong); margin-bottom: 44px; }
+body.quote .gist { display: inline-block; font-size: 28px; font-weight: 700; padding: 10px 18px; border-radius: 999px; background: var(--paper-2); color: var(--ink); }
