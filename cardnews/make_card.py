@@ -31,6 +31,7 @@ from naver_cardnews.db import Database
 from naver_cardnews.imagehash import dhash, to_hex
 from naver_cardnews.stat_card import Stat, StatError, validate_stat
 from naver_cardnews.stock import download
+from naver_cardnews.rubric import Judge, ensure_judged, gate
 from naver_cardnews.vision_pick import HaikuScorer, pick
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -143,6 +144,20 @@ def main(url: str, db_path: str, force: bool = False) -> str:
         db.conn.commit()
         db.close()
         raise SystemExit(f"원고 검수 오류 {len(errors)}건 (엑셀 '원고' 시트에서 수정 후 재실행, 또는 --force): {errors}")
+    # LLM 판정 게이트: 사실 일치 2점 이하(수치 오류·근거 없는 귀속)는 사람이 놓치기 쉬워 제작 전에 멈춘다 (docs/EVAL.md)
+    # 판정이 없는 버전(엑셀에서 막 고친 원고 등)은 여기서 채점한다.
+    if not force:
+        version = draft["version"] if draft is not None else db.latest_draft(aid)["version"]
+        key = keys.load("Anthropic-jachi", "ANTHROPIC_API_KEY", required=False)
+        ev = ensure_judged(db, aid, version, script, article["body"],
+                           {"press": article.get("press", ""), "title": article.get("title", ""), "date": article.get("date", "")},
+                           Judge(key) if key else None)
+        ok, why = gate(ev)
+        if not ok:
+            db.update_review(aid, None, f"제작 보류: {why[:120]}", None, None)
+            db.conn.commit()
+            db.close()
+            raise SystemExit(f"제작 보류 — {why}\n엑셀 '원고' 시트에서 고친 뒤 다시 실행하세요 (무시하려면 --force)")
     _normalize_slide_types(script, article["body"], notes)
 
     scorer = HaikuScorer(keys.load("Anthropic-jachi", "ANTHROPIC_API_KEY"))

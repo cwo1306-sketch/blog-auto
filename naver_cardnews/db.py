@@ -321,6 +321,15 @@ class Database:
         ).fetchall()
         return [(r["article_id"], float(r["jt"]), float(r["ht"])) for r in rows]
 
+    def judge_agreement_counts(self) -> dict[str, int]:
+        import json
+        out: dict[str, int] = {}
+        for r in self.conn.execute("SELECT detail_json FROM evaluations WHERE source='human'"):
+            a = json.loads(r["detail_json"]).get("judge_agree", "")
+            if a:
+                out[a] = out.get(a, 0) + 1
+        return out
+
     def judge_human_pairs(self) -> list[tuple[dict, dict]]:
         import json
         rows = self.conn.execute(

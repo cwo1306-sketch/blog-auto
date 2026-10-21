@@ -110,6 +110,32 @@ class Judge:
         return ev
 
 
+# --- 제작 게이트 -------------------------------------------------------------
+FACT_GATE = 2   # 판정기 사실 일치가 이 값 이하면 제작 중단
+
+
+def ensure_judged(db, article_id: str, version: int, script: dict, body: str, meta: dict, judge: "Judge | None"):
+    """해당 버전의 판정을 돌려준다. 없으면 judge 로 채점해 저장한다(judge 가 None 이면 None)."""
+    ev = db.evaluation(article_id, version, "judge")
+    if ev is not None or judge is None:
+        return ev
+    from .formats import format_rules
+    res = judge.evaluate(script, body, format_rules(script.get("format")), meta=meta)
+    db.save_evaluation(article_id, version, "judge", res.scores, res.total, res.to_dict())
+    return db.evaluation(article_id, version, "judge")
+
+
+def gate(ev) -> tuple[bool, str]:
+    """(통과 여부, 사유). 판정이 없으면 막는다 — 엑셀에서 고친 새 버전이 판정 없이 제작되는 것을 막기 위해."""
+    if ev is None:
+        return False, "이 원고 버전의 LLM 판정이 없음 (python -m naver_cardnews judge 실행 필요)"
+    scores = json.loads(ev["scores_json"])
+    if scores.get("fact", 5) <= FACT_GATE:
+        claims = json.loads(ev["detail_json"]).get("unsupported_claims", [])
+        return False, f"판정 사실 일치 {scores['fact']}점 ≤ {FACT_GATE}: 근거 없는 주장 {len(claims)}건 {claims}"
+    return True, ""
+
+
 # --- 결정적 가독성 지표 (판정기와 별개로 엑셀에 같이 싣는다) -----------------------
 _SENT_SPLIT = re.compile(r"(?<=[.!?다요죠])\s+")
 

@@ -150,6 +150,11 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"   {g['id']}: 판정 {g['judge']} vs 사람 {g['human']} ({g['gap']:+.2f})")
                 if tr["n"] < 20:
                     print(f" - 표본 {tr['n']}건: 20건 이상이어야 판정기 신뢰도를 말할 수 있습니다")
+            ag = db.judge_agreement_counts()
+            if ag:
+                n = sum(ag.values())
+                print(f"[판정 지적 확인] {n}건: " + ", ".join(f"{k} {v}" for k, v in ag.items())
+                      + f" → 동의율 {round(100 * ag.get('동의', 0) / n)}%")
             rep = agreement_report(db.judge_human_pairs())
             print(f"[축별 비교] 5축 모두 채점된 쌍 {rep['n']}건")
             for line in verdict(rep):

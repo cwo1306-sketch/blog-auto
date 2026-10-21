@@ -183,7 +183,8 @@ def _write_drafts_sheet(wb: Workbook, db: Database) -> int:
 
 
 SCORE_SHEET = "채점"
-HUMAN_COLS = ["사람 총점"] + [f"사람 {AXIS_KO[a]}" for a in AXES] + ["사람 메모"]   # 총점만 매겨도 되고, 5축을 다 매기면 총점은 자동 계산
+HUMAN_COLS = ["사람 총점"] + [f"사람 {AXIS_KO[a]}" for a in AXES] + ["판정 동의", "사람 메모"]   # 총점만 매겨도 되고, 5축을 다 매기면 총점은 자동 계산
+AGREE_VALUES = ("동의", "일부", "비동의")   # 판정기가 지적한 문제(근거 없는 주장·issues)를 사람이 확인한 결과
 
 
 def _write_scores_sheet(wb: Workbook, db: Database) -> int:
@@ -214,7 +215,7 @@ def _write_scores_sheet(wb: Workbook, db: Database) -> int:
                   + [js.get(a, "") for a in AXES]
                   + [j["total"] if j else "", "\n".join(jd.get("unsupported_claims", [])), jd.get("summary", ""),
                      pm["avg_words"], pm["max_words"], pm["long_sentences"]]
-                  + [h["total"] if h else ""] + [hs.get(a, "") for a in AXES] + [hd.get("memo", "")])
+                  + [h["total"] if h else ""] + [hs.get(a, "") for a in AXES] + [hd.get("judge_agree", ""), hd.get("memo", "")])
         for c, v in enumerate(values, start=1):
             cell = ws.cell(row=r, column=c, value=v)
             name = cols[c - 1]
@@ -228,9 +229,13 @@ def _write_scores_sheet(wb: Workbook, db: Database) -> int:
     if rows:
         dv = DataValidation(type="decimal", operator="between", formula1="1", formula2="5", allow_blank=True)
         ws.add_data_validation(dv)
-        for name in HUMAN_COLS[:-1]:
+        for name in HUMAN_COLS[:-2]:
             col = get_column_letter(cols.index(name) + 1)
             dv.add(f"{col}2:{col}{len(rows) + 1}")
+        dv2 = DataValidation(type="list", formula1='"' + ",".join(AGREE_VALUES) + '"', allow_blank=True)
+        ws.add_data_validation(dv2)
+        col = get_column_letter(cols.index("판정 동의") + 1)
+        dv2.add(f"{col}2:{col}{len(rows) + 1}")
         ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{len(rows) + 1}"
     return len(rows)
 
@@ -254,6 +259,8 @@ def import_scores(db: Database, path: Path) -> int:
             continue
         row = dict(zip(header, values))
         memo = str(row.get("사람 메모") or "").strip()
+        agree = str(row.get("판정 동의") or "").strip()
+        agree = agree if agree in AGREE_VALUES else ""
         aid, version = str(row["id"]).strip(), int(row.get("버전") or 0)
         try:
             scores = {a: int(row.get(f"사람 {AXIS_KO[a]}")) for a in AXES}
@@ -270,10 +277,12 @@ def import_scores(db: Database, path: Path) -> int:
                 continue
             scores = {}
         prev = db.evaluation(aid, version, "human")
-        if prev and json.loads(prev["scores_json"]) == scores and abs(prev["total"] - total) < 1e-9 \
-                and json.loads(prev["detail_json"]).get("memo", "") == memo:
-            continue
-        db.save_evaluation(aid, version, "human", scores, total, {"memo": memo, "overall_only": not scores})
+        if prev:
+            pd = json.loads(prev["detail_json"])
+            if json.loads(prev["scores_json"]) == scores and abs(prev["total"] - total) < 1e-9 \
+                    and pd.get("memo", "") == memo and pd.get("judge_agree", "") == agree:
+                continue
+        db.save_evaluation(aid, version, "human", scores, total, {"memo": memo, "judge_agree": agree, "overall_only": not scores})
         saved += 1
     wb.close()
     return saved

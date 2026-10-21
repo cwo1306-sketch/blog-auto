@@ -121,3 +121,42 @@ def test_overall_only_human_score_import(tmp_path):
     assert db.judge_human_totals() == [("002_2", 2.0, 5.0)]
     assert db.judge_human_pairs() == []          # 축별 보정에는 안 쓰인다
     assert import_scores(db, out) == 0           # 다시 반입해도 변화 없음
+
+
+def test_gate_and_ensure_judged(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.insert(Article("002_2", "AI", "기사", "a.com", "2026-10-21T00:00:00+00:00", "https://n.news.naver.com/article/002/2", "", "", normalize_title("기사")), 1, True, "대기")
+    v = db.save_draft("002_2", FULL, [], "ai", {})
+    ok, why = rubric.gate(db.evaluation("002_2", v, "judge"))
+    assert not ok and "판정이 없음" in why                       # 판정 없는 버전은 막는다
+    assert rubric.ensure_judged(db, "002_2", v, FULL, ARTICLE_BODY, {}, None) is None
+
+    class FakeJudge:
+        calls = 0
+        def evaluate(self, script, body, rules, meta=None):
+            FakeJudge.calls += 1
+            return rubric.Evaluation(scores={"fact": 2, "attribution": 4, "plain": 4, "structure": 4, "hook": 4},
+                                     unsupported_claims=["원문에 없는 문장"])
+    ev = rubric.ensure_judged(db, "002_2", v, FULL, ARTICLE_BODY, {}, FakeJudge())
+    ok, why = rubric.gate(ev)
+    assert not ok and "사실 일치 2점" in why and "원문에 없는 문장" in why
+    rubric.ensure_judged(db, "002_2", v, FULL, ARTICLE_BODY, {}, FakeJudge())
+    assert FakeJudge.calls == 1                                   # 이미 판정된 버전은 다시 부르지 않는다
+    v2 = db.save_draft("002_2", FULL, [], "excel", {})            # 엑셀 수정 → 새 버전은 판정 없음
+    db.save_evaluation("002_2", v2, "judge", {a: 4 for a in rubric.AXES}, 4.0, {})
+    assert rubric.gate(db.evaluation("002_2", v2, "judge")) == (True, "")
+
+
+def test_judge_agree_column_roundtrip(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.insert(Article("002_2", "AI", "기사", "a.com", "2026-10-21T00:00:00+00:00", "https://n.news.naver.com/article/002/2", "", "", normalize_title("기사")), 1, True, "대기")
+    v = db.save_draft("002_2", FULL, [], "ai", {})
+    db.save_evaluation("002_2", v, "judge", {a: 2 for a in rubric.AXES}, 2.0, {})
+    out = tmp_path / "q.xlsx"
+    export_queue(db, out)
+    wb = load_workbook(out); ws = wb["채점"]; header = [c.value for c in ws[1]]
+    ws.cell(2, header.index("사람 총점") + 1).value = 4
+    ws.cell(2, header.index("판정 동의") + 1).value = "일부"
+    wb.save(out)
+    assert import_scores(db, out) == 1
+    assert db.judge_agreement_counts() == {"일부": 1}
