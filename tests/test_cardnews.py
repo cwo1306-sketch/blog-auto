@@ -66,9 +66,10 @@ def test_build_pages_stat_and_plain():
     pages = render.build_pages(SCRIPT, ["bg_01.jpg", "bg_02.jpg", None, None], "출처: 한국경제 · 2026.10.21")
     assert len(pages) == 5
     assert '<body class="cover">' in pages[0] and "bg_01.jpg" in pages[0]
-    assert '<body class="stat">' in pages[2] and "card_stat.css" in pages[2] and 'data-len="short"' in pages[2]
+    assert '<body class="stat">' in pages[2] and 'data-len="short"' in pages[2]
     assert '<body class="slide plain">' in pages[3] and "background-image" not in pages[3]
-    assert '<body class="outro">' in pages[4] and "bg_01.jpg" in pages[4]  # 마지막 장은 표지 사진 재사용
+    assert '<body class="outro">' in pages[4] and "background-image" not in pages[4]  # 마무리는 형광 블록, 사진 없음
+    assert "<mark>AI의 눈</mark>" in pages[0] and 'class="num-big">01<' in pages[1]
 
 
 def test_render_smoke(tmp_path):

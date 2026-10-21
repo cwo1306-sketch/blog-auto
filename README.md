@@ -115,7 +115,7 @@ python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용
 
 로컬 naver-cardnews 프로젝트의 `make_card.py`, `naver_article.py`, `pexels.py`, `render.py`, `rerender.py`를 분석해
 같은 이름으로 개선본을 두었다(`keys.py`는 keys.txt/.env 로더). 로컬 프로젝트 루트에 **`cardnews/`의 .py 파일 전부를 복사**하고,
-`templates/card_stat.css`를 로컬 `templates/`에 추가하면 된다. `templates/card.css`는 로컬 것을 그대로 쓴다(이 저장소의 것은 테스트용 스텁). 이 저장소에서 `pip install -e .`(pyproject.toml 포함)을 하면 로컬 어디서든 `naver_cardnews`를 import 할 수 있다.
+`templates/card.css`는 **이 저장소의 v2(2026 트렌드, `docs/DESIGN_2026.md`)로 로컬 것을 교체**한다. 이 저장소에서 `pip install -e .`(pyproject.toml 포함)을 하면 로컬 어디서든 `naver_cardnews`를 import 할 수 있다.
 
 | 파일 | 바뀐 점 |
 |---|---|
