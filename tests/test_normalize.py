@@ -1,4 +1,4 @@
-from naver_cardnews.normalize import (char_bigrams, jaccard, naver_article_id, normalize_title,
+from naver_cardnews.normalize import (char_bigrams, jaccard, naver_article_id, normalize_title, off_niche_reason,
                                       press_from_url, strip_html)
 
 
@@ -27,3 +27,11 @@ def test_bigram_jaccard():
     a, b = char_bigrams("AI 반도체 수출"), char_bigrams("AI 반도체 수입")
     assert 0.5 < jaccard(a, b) < 1.0
     assert jaccard(a, set()) == 0.0
+
+
+def test_off_niche_reason():
+    topic, excl = ["AI", "반도체", "엔비디아"], ["코스피", "시황"]
+    assert off_niche_reason("엔비디아, 신형 ai 칩 공개", topic, excl) is None
+    assert off_niche_reason("코스피 3% 반등…삼전·닉스 급등 반도체주 강세", topic, excl).startswith("니치 외(배제어")
+    assert off_niche_reason("전북도, 4조8119억 규모 신규사업 발굴", topic, excl) == "니치 외(제목에 AI·테크 용어 없음)"
+    assert off_niche_reason("전북도, 신규사업 발굴", [], excl) is None  # topic_terms 비면 필터 끔

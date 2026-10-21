@@ -36,19 +36,22 @@ def test_collect_import_export(tmp_path: Path):
         "AI 반도체": [
             item("015", "1", "엔비디아, 신형 AI 칩 공개", "블랙웰 후속작 루빈을 공개했다", now, "https://hankyung.com/1"),
             item("009", "3", "SK하이닉스 HBM4 공급 계약", "내년 상반기 양산에 들어간다", now, "https://mk.co.kr/3"),
+            item("011", "4", "전북도, 4조원 규모 신규사업 발굴", "AI 관련 사업도 포함됐다", now, "https://jb.com/4"),
         ],
     }
     s = Settings(client_id="x", client_secret="y", db_path=tmp_path / "t.db",
-                 output_path=tmp_path / "q.xlsx", keywords=["엔비디아", "AI 반도체"])
+                 output_path=tmp_path / "q.xlsx", keywords=["엔비디아", "AI 반도체"],
+                 topic_terms=["AI", "엔비디아", "HBM"], exclude_terms=["코스피"])
     db = Database(s.db_path)
     rep = collect(s, db, client=FakeClient(data))
-    assert (rep.fetched, rep.non_naver, rep.too_old, rep.new_clusters) == (6, 1, 1, 2)
+    assert (rep.fetched, rep.non_naver, rep.too_old, rep.off_niche, rep.new_clusters) == (7, 1, 1, 1, 2)
+    assert db.get("011_4")["status"] == "제외" and db.get("011_4")["dup_reason"].startswith("니치 외")
     assert rep.by_stage == {1: 1, 2: 1}
     assert db.get("015_1")["keywords_hit"] == "엔비디아,AI 반도체"
     assert db.get("015_1")["score"] == 2
 
     # 내보내기
-    assert export_queue(db, s.output_path) == 3
+    assert export_queue(db, s.output_path) == 4
     ws = load_workbook(s.output_path)["뉴스큐"]
     header = [c.value for c in ws[1]]
     assert header[:4] == ["id", "수집일시", "키워드", "제목"] and "상태" in header

@@ -33,6 +33,8 @@ class Settings:
     db_path: Path
     output_path: Path
     keywords: list[str] = field(default_factory=list)
+    topic_terms: list[str] = field(default_factory=list)    # 제목에 하나는 있어야 함 (비면 필터 끔)
+    exclude_terms: list[str] = field(default_factory=list)  # 제목에 있으면 제외
     keywords_file: Path = DEFAULT_KEYWORDS_FILE
     per_keyword: int = 100          # 네이버 API display 최대 100
     max_age_days: int = 3           # 이보다 오래된 기사는 저장하지 않는다
@@ -49,31 +51,42 @@ class Settings:
     anthropic_api_key: str = ""
 
 
-def load_keywords(path: Path) -> list[str]:
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    words = data.get("keywords")
-    if isinstance(words, dict):  # 그룹 형태도 허용
-        words = [w for group in words.values() for w in (group or [])]
-    if not isinstance(words, list):
-        raise ValueError(f"{path}: 'keywords'는 목록이어야 합니다.")
+def _clean_list(words) -> list[str]:
     out: list[str] = []
-    for w in words:
+    for w in words or []:
         w = str(w).strip()
         if w and w not in out:
             out.append(w)
     return out
 
 
+def load_keyword_file(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def load_keywords(path: Path) -> list[str]:
+    data = load_keyword_file(path)
+    words = data.get("keywords")
+    if isinstance(words, dict):  # 그룹 형태도 허용
+        words = [w for group in words.values() for w in (group or [])]
+    if not isinstance(words, list):
+        raise ValueError(f"{path}: 'keywords'는 목록이어야 합니다.")
+    return _clean_list(words)
+
+
 def load_settings(env_file: Path | None = None, keywords_file: Path | None = None) -> Settings:
     _load_dotenv(env_file or PROJECT_ROOT / ".env")
     env = os.environ.get
     kw_file = keywords_file or Path(env("NAVER_CARDNEWS_KEYWORDS", DEFAULT_KEYWORDS_FILE))
+    kw_data = load_keyword_file(kw_file)
     return Settings(
         client_id=env("NAVER_CLIENT_ID", ""),
         client_secret=env("NAVER_CLIENT_SECRET", ""),
         db_path=Path(env("NAVER_CARDNEWS_DB", PROJECT_ROOT / "data" / "news.db")),
         output_path=Path(env("NAVER_CARDNEWS_OUT", PROJECT_ROOT / "data" / "news_queue.xlsx")),
         keywords=load_keywords(kw_file),
+        topic_terms=_clean_list(kw_data.get("topic_terms")),
+        exclude_terms=_clean_list(kw_data.get("exclude_terms")),
         keywords_file=kw_file,
         per_keyword=int(env("NAVER_CARDNEWS_PER_KEYWORD", "100")),
         max_age_days=int(env("NAVER_CARDNEWS_MAX_AGE_DAYS", "3")),

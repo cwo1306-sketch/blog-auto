@@ -15,7 +15,8 @@ from .config import Settings
 from .db import Article, Database
 from .dedup import Deduplicator
 from .judge import Judge
-from .normalize import naver_article_id, normalize_title, press_from_url, strip_html
+from .normalize import (naver_article_id, normalize_title, off_niche_reason, press_from_url,
+                        strip_html)
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ class Report:
     fetched: int = 0
     non_naver: int = 0
     too_old: int = 0
+    off_niche: int = 0
     new_clusters: int = 0
     by_stage: dict[int, int] = field(default_factory=dict)
     judge_calls: int = 0
@@ -107,7 +109,8 @@ class Report:
         names = {1: "URL", 2: "제목", 3: "근접", 4: "기게시"}
         stages = ", ".join(f"{names[k]} {v}" for k, v in sorted(self.by_stage.items()))
         parts = [f"API {self.fetched}건", f"네이버뉴스 아님 {self.non_naver}건",
-                 f"기간 초과 {self.too_old}건", f"신규 대기 {self.new_clusters}건",
+                 f"기간 초과 {self.too_old}건", f"니치 외 {self.off_niche}건",
+                 f"신규 대기 {self.new_clusters}건",
                  f"중복 {sum(self.by_stage.values())}건" + (f" ({stages})" if stages else "")]
         if self.judge_calls:
             parts.append(f"Haiku 판정 {self.judge_calls}회")
@@ -152,11 +155,17 @@ def collect(settings: Settings, db: Database, client: NaverNewsClient | None = N
                     report.too_old += 1
                     continue
 
-                d = dedup.decide(article)
-                if d.stage == 1:
+                if db.get(article.id) is not None:          # 1단계: 같은 네이버 기사
                     db.add_keyword_hit(article.id, keyword)
                     report.by_stage[1] = report.by_stage.get(1, 0) + 1
                     continue
+                why = off_niche_reason(article.title, settings.topic_terms, settings.exclude_terms)
+                if why:                                      # 니치 밖: 대표가 되지 않게 저장만
+                    db.insert(article, None, False, "제외", why)
+                    report.off_niche += 1
+                    continue
+
+                d = dedup.decide(article)
                 cluster_id = d.cluster_id if d.cluster_id is not None else db.next_cluster_id()
                 is_rep = d.cluster_id is None   # 새 클러스터면 대표 (4단계 기게시도 자기 클러스터의 대표)
                 db.insert(article, cluster_id, is_rep, d.status, d.reason)

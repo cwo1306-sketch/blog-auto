@@ -136,7 +136,7 @@ class Database:
         return out
 
     # --- 쓰기 -------------------------------------------------------------
-    def insert(self, a: Article, cluster_id: int, is_representative: bool,
+    def insert(self, a: Article, cluster_id: int | None, is_representative: bool,
                status: str, dup_reason: str = "") -> None:
         self.conn.execute(
             "INSERT INTO articles (id, collected_at, keyword, keywords_hit, title, press, pub_date, "
@@ -161,7 +161,7 @@ class Database:
         """대표 기사의 score = 클러스터 내 언론사 수."""
         self.conn.execute(
             "UPDATE articles SET score=(SELECT COUNT(DISTINCT press) FROM articles b "
-            "WHERE b.cluster_id=articles.cluster_id)"
+            "WHERE b.cluster_id=articles.cluster_id) WHERE cluster_id IS NOT NULL"
         )
         self.conn.commit()
 

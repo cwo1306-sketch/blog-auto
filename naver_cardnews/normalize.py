@@ -51,6 +51,18 @@ def char_bigrams(text: str) -> set[str]:
     return {t[i:i + 2] for i in range(len(t) - 1)}
 
 
+def off_niche_reason(title: str, topic_terms: list[str], exclude_terms: list[str]) -> str | None:
+    """니치 필터. 제목에 exclude 용어가 있거나 topic 용어가 하나도 없으면 사유를 돌려준다.
+    topic_terms가 비어 있으면 필터를 끈 것으로 본다. 비교는 대소문자를 무시한다."""
+    t = unicodedata.normalize("NFKC", strip_html(title)).lower()
+    for term in exclude_terms:
+        if term.lower() in t:
+            return f"니치 외(배제어 '{term}')"
+    if topic_terms and not any(term.lower() in t for term in topic_terms):
+        return "니치 외(제목에 AI·테크 용어 없음)"
+    return None
+
+
 def jaccard(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
