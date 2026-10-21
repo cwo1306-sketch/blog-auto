@@ -21,8 +21,6 @@ import time
 import naver_article
 import pexels
 import render
-import validate
-import writer
 
 import keys
 from naver_cardnews.db import Database
@@ -99,6 +97,9 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
 
 
 def main(url: str, db_path: str) -> str:
+    import validate  # 로컬 프로젝트 모듈 (이 저장소에는 없음) — 호출 시점에 import 해 배치·테스트가 모듈 부재로 죽지 않게
+    import writer
+
     t0 = time.time()
     article = naver_article.fetch(url)
     aid = article["id"]

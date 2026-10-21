@@ -88,3 +88,35 @@ def test_render_smoke(tmp_path):
     assert kinds == ["cover", "slide", "stat", "slide", "outro"]
     assert qa[2]["contrast"] is None and not any("폰트" in i for q in qa for i in q["issues"])
     (tmp_path / "qa.json").write_text(json.dumps(qa, ensure_ascii=False))
+
+
+def test_make_batch_continues_after_failure(tmp_path, monkeypatch):
+    import make_batch
+    from naver_cardnews.db import Article, Database
+    from naver_cardnews.normalize import normalize_title
+    db_path = tmp_path / "news.db"
+    db = Database(db_path)
+    for i, (aid, st) in enumerate([("001_1", "승인"), ("001_2", "승인"), ("001_3", "대기")]):
+        db.insert(Article(aid, "AI", f"기사 {i}", "a.com", "2026-10-21T00:00:00+00:00",
+                          f"https://n.news.naver.com/article/{aid.replace('_', '/')}", "", "", normalize_title(f"기사 {i}")),
+                  i + 1, True, st)
+    db.conn.commit(); db.close()
+
+    calls = []
+    def fake_make(url, dbp):
+        calls.append(url)
+        if url.endswith("/1"):
+            raise RuntimeError("writer 실패")
+        d = Database(dbp); d.update_review("001_2", "제작완료", None, "output/001_2", None); d.conn.commit(); d.close()
+        return "output/001_2"
+    monkeypatch.setattr(make_batch.make_card, "main", fake_make)
+    monkeypatch.setattr(make_batch, "import_queue", lambda db, p: 0)
+    monkeypatch.setattr(make_batch, "export_queue", lambda db, p: 0)
+    monkeypatch.setenv("NAVER_CARDNEWS_OUT", str(tmp_path / "q.xlsx"))
+
+    rc = make_batch.main(str(db_path), limit=5, dry_run=False)
+    assert rc == 1 and len(calls) == 2
+    db = Database(db_path)
+    assert db.get("001_1")["status"] == "승인" and db.get("001_1")["memo"].startswith("제작 실패")
+    assert db.get("001_2")["status"] == "제작완료" and db.get("001_2")["card_folder"] == "output/001_2"
+    assert db.get("001_3")["status"] == "대기"

@@ -116,7 +116,7 @@ python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용
 로컬 naver-cardnews 프로젝트의 `make_card.py`, `naver_article.py`, `pexels.py`, `render.py`, `rerender.py`를 분석해
 같은 이름으로 개선본을 두었다(`keys.py`는 keys.txt/.env 로더). 로컬 프로젝트 루트에 **이 다섯 파일과 `keys.py`를 복사**하고,
 `templates/card_stat.css`를 로컬 `templates/`에 추가하면 된다. `writer.py`, `validate.py`, `templates/card.css`는 로컬 것을 그대로 쓴다
-(이 저장소의 `templates/card.css`는 테스트용 스텁). 이 저장소를 `pip install -e .` 하거나 `PYTHONPATH`에 넣어 `naver_cardnews`를 import 할 수 있어야 한다.
+(이 저장소의 `templates/card.css`는 테스트용 스텁). 이 저장소에서 `pip install -e .`(pyproject.toml 포함)을 하면 로컬 어디서든 `naver_cardnews`를 import 할 수 있다.
 
 | 파일 | 바뀐 점 |
 |---|---|
@@ -125,6 +125,7 @@ python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용
 | `pexels.py` | `naver_cardnews.stock` 래퍼. 원본(1350px 이상) 다운로드, 가로·저해상도 제외, 작가당 상한, Unsplash 키 있으면 자동 추가 |
 | `render.py` | `document.fonts.ready`를 실제로 await(원본은 Promise 미대기), stat/plain 장 렌더, 숫자 넘침 자동 축소, 폰트 로딩 상태 QA, Pillow 구 API 회피, `CHROMIUM_PATH` |
 | `rerender.py` | meta의 장별 배경(stat·단색 포함) 그대로 재렌더, 구 meta 포맷 호환 |
+| `make_batch.py` (신규, 로드맵 2단계) | 엑셀 반입 → `승인` 행을 점수순으로 `--limit`건 제작 → 성공 `제작완료`+카드폴더, 실패는 `승인` 유지+메모 → 엑셀 재생성. `--dry-run`으로 대상만 확인 |
 
 writer가 내야 할 추가 필드(선택): 장마다 `slide_type: "photo"|"stat"`, `stat: {value, unit, label, source_quote}`,
 `image_queries: [은유형, 구체형]`(없으면 기존 `image_query`), `image_concept`(한국어 한 줄, 비전 검수 입력).
