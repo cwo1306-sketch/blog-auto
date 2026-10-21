@@ -1,6 +1,9 @@
 """사용법:
     python -m naver_cardnews run        # import(엑셀→DB) → collect(API+섹션) → draft(상위 N 원고) → export (평소엔 이것만)
     python -m naver_cardnews draft --top 10   # 대기 상위 N건 본문 크롤링 + 원고·캡션 생성 → '원고' 시트
+    python -m naver_cardnews judge             # 최신 원고를 5축 채점표로 LLM 판정 → '채점' 시트
+    python -m naver_cardnews calibrate         # '채점' 시트의 사람 점수와 판정기 일치도(가중 카파) 보고
+    python -m naver_cardnews feedback [--fewshot]  # 엑셀 수정 내역 분류·집계, --fewshot 이면 writer 예시 파일 갱신
     python -m naver_cardnews collect    # 수집 + 중복 제거 → SQLite
     python -m naver_cardnews export     # SQLite → 엑셀 재생성
     python -m naver_cardnews import     # 엑셀의 상태/메모 → SQLite
@@ -19,13 +22,16 @@ from pathlib import Path
 from .collect import collect
 from .config import load_settings
 from .db import Database
-from .queue import ExcelLocked, export_queue, import_drafts, import_queue
+from .queue import ExcelLocked, export_queue, import_drafts, import_queue, import_scores
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="naver_cardnews", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["run", "collect", "draft", "export", "import", "stats", "pick-image", "stat-card"])
+    p.add_argument("command", choices=["run", "collect", "draft", "judge", "calibrate", "feedback", "export", "import", "stats",
+                                       "pick-image", "stat-card"])
+    p.add_argument("--fewshot", action="store_true", help="feedback: 잘 고쳐진 쌍을 data/fewshot.json 으로 저장해 writer 예시로 사용")
+    p.add_argument("--rejudge", action="store_true", help="judge: 기존 판정을 지우고 최신 원고 전부 다시 채점 (판정 프롬프트를 고친 뒤)")
     p.add_argument("--top", type=int, help="draft: 원고를 만들 상위 건수 (기본 NAVER_CARDNEWS_DRAFT_TOP=10, run 에서는 0이면 생략)")
     p.add_argument("--no-sections", action="store_true", help="섹션 페이지 크롤링 끄기")
     p.add_argument("--format", choices=["auto", "explainer", "listicle", "numbers", "term", "qa", "compare"], default="auto",
@@ -92,7 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command in ("run", "import"):
             n = import_queue(db, s.output_path)
             m = import_drafts(db, s.output_path)
-            print(f"엑셀 → DB 반영: 상태 {n}건, 원고 수정 {m}건")
+            k = import_scores(db, s.output_path)
+            print(f"엑셀 → DB 반영: 상태 {n}건, 원고 수정 {m}건, 사람 채점 {k}건")
         if args.command in ("run", "collect"):
             rep = collect(s, db, judge=judge, progress=lambda k: print("  수집:", k, file=sys.stderr))
             print(rep.summary())
@@ -104,10 +111,48 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 from . import writer
                 from .draft import draft_top
+                from .feedback import fewshot_prompt
                 writer.configure(s.anthropic_api_key)
+                fs = s.db_path.parent / "fewshot.json"
+                if fs.exists():
+                    writer.set_examples(fewshot_prompt(__import__("json").loads(fs.read_text(encoding="utf-8"))))
                 rep = draft_top(db, s.draft_top, progress=lambda t: print("  원고:", t, file=sys.stderr),
                                 fmt=None if args.format == "auto" else args.format)
                 print(rep.summary())
+        if args.command == "judge" or (args.command == "run" and s.draft_top > 0 and s.anthropic_api_key):
+            from .formats import format_rules
+            from .rubric import Judge
+            judge = Judge(s.anthropic_api_key)
+            if args.command == "judge" and args.rejudge:
+                print(f"기존 판정 {db.clear_judgements()}건 삭제", file=sys.stderr)
+            n = 0
+            for d in db.unjudged_drafts():
+                script = __import__("json").loads(d["script_json"])
+                try:
+                    ev = judge.evaluate(script, d["body"] or "", format_rules(script.get("format")),
+                                        meta={"press": d["press"], "title": d["article_title"], "date": (d["pub_date"] or "")[:10]})
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  판정 실패 {d['article_id']}: {exc}", file=sys.stderr)
+                    continue
+                db.save_evaluation(d["article_id"], d["version"], "judge", ev.scores, ev.total, ev.to_dict())
+                n += 1
+                print(f"  판정 {d['article_id']} v{d['version']}: {ev.scores} 총점 {ev.total}", file=sys.stderr)
+            print(f"LLM 판정 {n}건")
+        if args.command == "calibrate":
+            from .rubric import agreement_report, verdict
+            rep = agreement_report(db.judge_human_pairs())
+            print(f"판정기·사람 쌍 {rep['n']}건")
+            for line in verdict(rep):
+                print(" -", line)
+        if args.command == "feedback":
+            from .feedback import aggregate, build_fewshot, collect_diffs, report_text
+            diffs = collect_diffs(db, days=30)
+            print(report_text(aggregate(diffs)))
+            if args.fewshot:
+                ex = build_fewshot(diffs)
+                fs = s.db_path.parent / "fewshot.json"
+                fs.write_text(__import__("json").dumps(ex, ensure_ascii=False, indent=1), encoding="utf-8")
+                print(f"few-shot 예시 {len(ex)}개 → {fs}")
         if args.command in ("run", "export"):
             n = export_queue(db, s.output_path)
             print(f"DB → 엑셀 {n}행 → {s.output_path}")

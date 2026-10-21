@@ -47,6 +47,17 @@ CREATE TABLE IF NOT EXISTS drafts (
     created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_drafts_article ON drafts(article_id, version);
+CREATE TABLE IF NOT EXISTS evaluations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id  TEXT NOT NULL,
+    version     INTEGER NOT NULL,               -- 채점한 원고 버전
+    source      TEXT NOT NULL,                  -- judge | human
+    scores_json TEXT NOT NULL,                  -- {fact, attribution, plain, structure, hook}
+    total       REAL NOT NULL,
+    detail_json TEXT NOT NULL DEFAULT '{}',     -- judge: issues/unsupported/summary, human: memo
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_eval_article ON evaluations(article_id, version, source);
 CREATE INDEX IF NOT EXISTS idx_articles_title_key ON articles(title_key);
 CREATE INDEX IF NOT EXISTS idx_articles_pub_date ON articles(pub_date);
 CREATE INDEX IF NOT EXISTS idx_articles_cluster ON articles(cluster_id);
@@ -269,6 +280,45 @@ class Database:
         )
         self.conn.commit()
         return version
+
+    # --- 채점 ---------------------------------------------------------------
+    def save_evaluation(self, article_id: str, version: int, source: str, scores: dict, total: float, detail: dict) -> None:
+        import json
+        if source == "human":   # 사람 점수는 같은 버전에 하나만 (덮어쓰기)
+            self.conn.execute("DELETE FROM evaluations WHERE article_id=? AND version=? AND source='human'", (article_id, version))
+        self.conn.execute(
+            "INSERT INTO evaluations (article_id, version, source, scores_json, total, detail_json, created_at) VALUES (?,?,?,?,?,?,?)",
+            (article_id, version, source, json.dumps(scores, ensure_ascii=False), total, json.dumps(detail, ensure_ascii=False), utcnow()),
+        )
+        self.conn.commit()
+
+    def evaluation(self, article_id: str, version: int, source: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM evaluations WHERE article_id=? AND version=? AND source=? ORDER BY id DESC LIMIT 1",
+            (article_id, version, source),
+        ).fetchone()
+
+    def clear_judgements(self) -> int:
+        cur = self.conn.execute("DELETE FROM evaluations WHERE source='judge'")
+        self.conn.commit()
+        return cur.rowcount
+
+    def unjudged_drafts(self, limit: int = 50) -> list[sqlite3.Row]:
+        """최신 버전인데 judge 점수가 없는 원고."""
+        return self.conn.execute(
+            "SELECT d.*, a.body, a.press, a.title AS article_title, a.pub_date FROM drafts d JOIN articles a ON a.id=d.article_id "
+            "WHERE d.version=(SELECT MAX(version) FROM drafts x WHERE x.article_id=d.article_id) "
+            "AND NOT EXISTS (SELECT 1 FROM evaluations e WHERE e.article_id=d.article_id AND e.version=d.version AND e.source='judge') "
+            "ORDER BY d.created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+    def judge_human_pairs(self) -> list[tuple[dict, dict]]:
+        import json
+        rows = self.conn.execute(
+            "SELECT j.scores_json AS j, h.scores_json AS h FROM evaluations j JOIN evaluations h "
+            "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source='judge'"
+        ).fetchall()
+        return [(json.loads(r["j"]), json.loads(r["h"])) for r in rows]
 
     # --- 사용 이미지 기록 --------------------------------------------------
     def image_used(self, source: str, external_id: str) -> bool:

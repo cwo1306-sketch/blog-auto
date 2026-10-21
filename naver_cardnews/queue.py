@@ -13,8 +13,10 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 import json
 
+from . import feedback as fb
 from . import sheet as sheetmod
 from . import validate
+from .rubric import AXES, AXIS_KO, WEIGHTS, plain_metrics
 from .db import STATUSES, Database
 
 KST = timezone(timedelta(hours=9))
@@ -118,7 +120,9 @@ def export_queue(db: Database, output: Path) -> int:
         ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}{len(rows) + 1}"
 
     _write_drafts_sheet(wb, db)
+    _write_scores_sheet(wb, db)
     _write_bodies_sheet(wb, db)
+    _write_feedback_sheet(wb, db)
 
     meta = wb.create_sheet("요약")
     meta.append(["생성 시각(KST)", datetime.now(KST).strftime("%Y-%m-%d %H:%M")])
@@ -176,6 +180,107 @@ def _write_drafts_sheet(wb: Workbook, db: Database) -> int:
             dv.add(f"{col}2:{col}{len(rows) + 1}")
         ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{len(rows) + 1}"
     return len(rows)
+
+
+SCORE_SHEET = "채점"
+HUMAN_COLS = [f"사람 {AXIS_KO[a]}" for a in AXES] + ["사람 메모"]
+
+
+def _write_scores_sheet(wb: Workbook, db: Database) -> int:
+    """기사별 최신 원고의 판정기 점수 + 사람 채점 입력란. 사람 점수(1~5)를 넣고 저장하면 다음 반입 때 evaluations(human)으로 들어간다."""
+    ws = wb.create_sheet(SCORE_SHEET)
+    judge_cols = [f"판정 {AXIS_KO[a]}" for a in AXES]
+    cols = (["id", "기사 제목", "포맷", "버전", "출처"] + judge_cols + ["판정 총점", "근거 없는 주장", "판정 총평",
+            "문장당 어절", "최장 문장 어절", "12어절 초과 문장"] + HUMAN_COLS)
+    head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1F4E78")
+    edit_head, edit_fill = PatternFill("solid", fgColor="BF8F00"), PatternFill("solid", fgColor="FFF2CC")
+    low_fill = PatternFill("solid", fgColor="F8CBAD")
+    for c, name in enumerate(cols, start=1):
+        cell = ws.cell(row=1, column=c, value=name)
+        cell.font, cell.fill = head_font, (edit_head if name in HUMAN_COLS else head_fill)
+        ws.column_dimensions[get_column_letter(c)].width = 40 if name in ("근거 없는 주장", "판정 총평", "기사 제목") else (24 if name == "사람 메모" else 12)
+    ws.freeze_panes = "C2"
+    rows = db.drafts_for_export()
+    for r, d in enumerate(rows, start=2):
+        script = json.loads(d["script_json"])
+        j = db.evaluation(d["article_id"], d["version"], "judge")
+        h = db.evaluation(d["article_id"], d["version"], "human")
+        js = json.loads(j["scores_json"]) if j else {}
+        jd = json.loads(j["detail_json"]) if j else {}
+        hs = json.loads(h["scores_json"]) if h else {}
+        hd = json.loads(h["detail_json"]) if h else {}
+        pm = plain_metrics(script)
+        values = ([d["article_id"], d["article_title"], script.get("format", ""), d["version"], d["source"]]
+                  + [js.get(a, "") for a in AXES]
+                  + [j["total"] if j else "", "\n".join(jd.get("unsupported_claims", [])), jd.get("summary", ""),
+                     pm["avg_words"], pm["max_words"], pm["long_sentences"]]
+                  + [hs.get(a, "") for a in AXES] + [hd.get("memo", "")])
+        for c, v in enumerate(values, start=1):
+            cell = ws.cell(row=r, column=c, value=v)
+            name = cols[c - 1]
+            if name in HUMAN_COLS:
+                cell.fill = edit_fill
+            if name.startswith("판정 ") and isinstance(v, int) and v <= 2:
+                cell.fill = low_fill
+            if name in ("근거 없는 주장", "판정 총평"):
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[r].height = 60
+    if rows:
+        dv = DataValidation(type="whole", operator="between", formula1="1", formula2="5", allow_blank=True)
+        ws.add_data_validation(dv)
+        for name in HUMAN_COLS[:-1]:
+            col = get_column_letter(cols.index(name) + 1)
+            dv.add(f"{col}2:{col}{len(rows) + 1}")
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{len(rows) + 1}"
+    return len(rows)
+
+
+def import_scores(db: Database, path: Path) -> int:
+    """'채점' 시트의 사람 점수(5축 모두 입력된 행만)를 evaluations(human)으로 저장. 저장 건수를 돌려준다."""
+    if not path.exists():
+        return 0
+    _check_lock(path)
+    wb = load_workbook(path, read_only=True, data_only=True)
+    if SCORE_SHEET not in wb.sheetnames:
+        return 0
+    ws = wb[SCORE_SHEET]
+    rows = ws.iter_rows(values_only=True)
+    header = [str(h) if h is not None else "" for h in next(rows, [])]
+    if "id" not in header:
+        return 0
+    saved = 0
+    for values in rows:
+        if not values or values[header.index("id")] is None:
+            continue
+        row = dict(zip(header, values))
+        try:
+            scores = {a: int(row.get(f"사람 {AXIS_KO[a]}")) for a in AXES}
+        except (TypeError, ValueError):
+            continue   # 다 채워지지 않은 행
+        if not all(1 <= v <= 5 for v in scores.values()):
+            continue
+        aid, version = str(row["id"]).strip(), int(row.get("버전") or 0)
+        prev = db.evaluation(aid, version, "human")
+        if prev and json.loads(prev["scores_json"]) == scores and json.loads(prev["detail_json"]).get("memo", "") == str(row.get("사람 메모") or "").strip():
+            continue
+        total = round(sum(scores[a] * WEIGHTS[a] for a in AXES), 2)
+        db.save_evaluation(aid, version, "human", scores, total, {"memo": str(row.get("사람 메모") or "").strip()})
+        saved += 1
+    wb.close()
+    return saved
+
+
+def _write_feedback_sheet(wb: Workbook, db: Database) -> None:
+    ws = wb.create_sheet("피드백")
+    ws.column_dimensions["A"].width = 110
+    diffs = fb.collect_diffs(db, days=30)
+    for line in fb.report_text(fb.aggregate(diffs)).splitlines():
+        ws.append([line])
+    ws.append([])
+    ws.append(["최근 수정 내역 (최신 20개): 기사 · 열 · 유형 · 전 → 후"])
+    for d in diffs[::-1][:20]:
+        for c in d.changes[:6]:
+            ws.append([f"{d.article_id} · {c['field']} · {c['kind']} · {c['before'][:60]} → {c['after'][:60]}"])
 
 
 def _write_bodies_sheet(wb: Workbook, db: Database) -> int:

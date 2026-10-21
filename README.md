@@ -119,6 +119,15 @@ python -m naver_cardnews draft --top 10 # 대기 중 점수 상위 N건만: 본�
 - **반입 규칙**: 다음 실행 때 `원고` 시트에서 바뀐 행은 새 버전(source=`excel`)으로 저장하고 재검수해 `검수오류` 열에 표시한다. 제작(`make_card.py`)은 최신 버전을 쓰므로 **엑셀 수정본이 최종**이다. 검수 오류가 남아 있으면 제작을 멈추고 memo에 남긴다(`--force`로 무시 가능).
 - **캡션 프롬프트**: 1줄 훅(표지와 다른 표현) / 핵심 3가지 `•` / 댓글 유도 / `출처: 언론사`, 350자 이내. 해시태그 8~10개, 앞 3개 고정(#AI뉴스 #AI #테크뉴스).
 
+## 원고 품질 평가와 학습 (`docs/EVAL.md`)
+
+```bash
+python -m naver_cardnews judge               # 5축 채점표(사실·출처·쉬운 말·구조·훅)로 LLM 판정 → 엑셀 '채점' 시트
+python -m naver_cardnews calibrate           # '채점' 시트 사람 점수 vs 판정기: 축별 가중 카파·편향
+python -m naver_cardnews feedback --fewshot  # 엑셀 수정 유형 집계 + 잘 고쳐진 전후 쌍을 writer 예시로
+```
+엑셀 시트: `채점`(판정 점수·근거 없는 주장·가독성 지표 + 사람 채점 노란 열), `피드백`(수정 유형 집계·처방).
+
 ## 3단계 부품: 스톡 검색 + 비전 선택 + used_images + 숫자 카드
 
 설계는 `docs/STAGE3_DESIGN.md`. 이 저장소에는 로컬 `make_card.py`에 끼울 **부품**이 들어 있다.

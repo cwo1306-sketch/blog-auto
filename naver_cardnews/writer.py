@@ -84,6 +84,13 @@ class WriterError(RuntimeError):
 
 
 _API_KEY: str | None = None
+_EXAMPLES: str = ""
+
+
+def set_examples(text: str) -> None:
+    """편집자 수정 예시(feedback.fewshot_prompt)를 시스템 프롬프트 끝에 붙인다. 빈 문자열이면 제거."""
+    global _EXAMPLES
+    _EXAMPLES = text or ""
 
 
 def configure(api_key: str | None) -> None:
@@ -155,7 +162,8 @@ def normalize_script(script: dict) -> dict:
 
 
 def system_prompt(fmt: str | None = None) -> str:
-    return SYSTEM.replace("{FORMAT_RULES}", format_rules(fmt))
+    base = SYSTEM.replace("{FORMAT_RULES}", format_rules(fmt))
+    return base + ("\n\n" + _EXAMPLES if _EXAMPLES else "")
 
 
 def write(article: dict, previous: dict | None = None, errors: list[str] | None = None,
