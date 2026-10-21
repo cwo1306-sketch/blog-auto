@@ -195,3 +195,11 @@ def test_gate_only_blocks_factual_claims(tmp_path):
     ok3 = _ev(3, [("조경태 의원 측 주장에 따르면", "사실 주장")])
     db.save_evaluation("002_2", v, "judge", ok3.scores, ok3.total, ok3.to_dict())
     assert rubric.gate(db.evaluation("002_2", v, "judge"))[0]              # 사실 일치 3점이면 통과
+
+
+def test_judge_schema_is_api_compatible():
+    s = json.dumps(rubric.JUDGE_SCHEMA)
+    assert "minimum" not in s and "maximum" not in s                     # API 미지원 제약 없음
+    assert rubric.JUDGE_SCHEMA["required"] == ["scores", "issues", "unsupported_claims", "summary"]
+    claim = rubric.JUDGE_SCHEMA["properties"]["unsupported_claims"]["items"]
+    assert claim["properties"]["type"]["enum"] == list(rubric.CLAIM_TYPES) and claim["additionalProperties"] is False

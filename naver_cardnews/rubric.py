@@ -145,6 +145,28 @@ def script_for_judge(script: dict) -> dict:
     return out
 
 
+# 구조화 출력 스키마: 응답이 항상 이 JSON 으로 온다 (판정기가 원고 문장을 따옴표째 인용해 JSON 이 깨지던 문제 해결).
+# minimum/maximum 은 API 미지원이라 쓰지 않고 parse_evaluation 에서 1~5 로 자른다.
+_INT_OR_NULL = {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+JUDGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "scores": {"type": "object", "properties": {a: {"type": "integer"} for a in AXES},
+                   "required": list(AXES), "additionalProperties": False},
+        "issues": {"type": "array", "items": {"type": "object", "properties": {
+            "axis": {"type": "string", "enum": list(AXES)}, "slide": _INT_OR_NULL,
+            "text": {"type": "string"}, "why": {"type": "string"}},
+            "required": ["axis", "slide", "text", "why"], "additionalProperties": False}},
+        "unsupported_claims": {"type": "array", "items": {"type": "object", "properties": {
+            "text": {"type": "string"}, "type": {"type": "string", "enum": list(CLAIM_TYPES)}, "slide": _INT_OR_NULL},
+            "required": ["text", "type", "slide"], "additionalProperties": False}},
+        "summary": {"type": "string"},
+    },
+    "required": ["scores", "issues", "unsupported_claims", "summary"],
+    "additionalProperties": False,
+}
+
+
 class Judge:
     def __init__(self, api_key: str | None = None, model: str = JUDGE_MODEL):
         import anthropic
@@ -167,13 +189,17 @@ class Judge:
         user = (f"[format 규칙]\n{format_rules}\n\n[기사 메타데이터]\n{meta_txt}\n\n[기사 원문]\n{article_body}\n\n"
                 f"[카드뉴스 원고]\n{json.dumps(script_for_judge(script), ensure_ascii=False, indent=1)}")
         # 거부(refusal) 시 서버가 다른 모델로 자동 재시도하도록 server-side fallback 을 켠다
+        # max_tokens 16000: 사고(thinking) 토큰이 4000 한도를 먼저 써 버려 본문이 비던 문제 해결
         msg = self.client.beta.messages.create(
-            model=self.model, max_tokens=4000, system=JUDGE_SYSTEM,
-            output_config={"effort": "medium"}, betas=[FALLBACK_BETA], fallbacks="default",
+            model=self.model, max_tokens=16000, system=JUDGE_SYSTEM,
+            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": JUDGE_SCHEMA}},
+            betas=[FALLBACK_BETA], fallbacks="default",
             messages=[{"role": "user", "content": user}],
         )
         if msg.stop_reason == "refusal":
             raise RuntimeError("판정 모델이 채점을 거부했습니다")
+        if msg.stop_reason == "max_tokens":
+            raise RuntimeError("판정 응답이 max_tokens 에서 잘렸습니다")
         text = "".join(b.text for b in msg.content if b.type == "text")
         ev = parse_evaluation(text)
         ev.usage = {"model": self.model, "input_tokens": msg.usage.input_tokens, "output_tokens": msg.usage.output_tokens}
