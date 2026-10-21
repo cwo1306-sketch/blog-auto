@@ -57,7 +57,7 @@ FORMATS: dict[str, dict] = {
         "slides": ["photo", "photo", "stat|photo", "compare", "photo"],
         "rules": (
             "표지: '~라고 알고 있었다면' 또는 '왜 ~일까?' 의문. 본문 5장: ② 통념·겉보기 상황 photo ③ 단서 1 photo ④ 단서 2 (수치면 stat) "
-            "⑤ 반전을 compare(left='알려진 것', right='실제로는')로 ⑥ 왜 그런가, 무엇이 달라지나 photo. 결론을 마지막까지 미루되 "
+            "⑤ 반전을 compare(left='알려진 것', right='실제로는')로 ⑥ 왜 그런가, 무엇이 달라지나 photo. photo body는 40~110자로 단서를 짧게 던진다. 결론을 마지막까지 미루되 "
             "표지에서 답을 암시하지 않는다. 마무리 summary에 반전 한 문장."
         ),
     },

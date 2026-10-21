@@ -29,7 +29,7 @@ TYPE_LIMITS = {
     "quote":   {"title": 14, "body": (30, 115), "label": 22},
 }
 # 포맷별 photo 본문 길이 예외 (현장 사례형은 한 장 한 문장)
-FORMAT_PHOTO_BODY = {"scene": (25, 75)}
+FORMAT_PHOTO_BODY = {"scene": (25, 75), "reveal": (40, 110)}   # 반전형은 단서를 짧게 던진다
 NO_PHOTO_TYPES = {"list", "term", "qa", "compare", "stat"}
 NUM_UNIT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([가-힣%a-zA-Z]{0,3})")
 HANJA = re.compile(r"[一-鿿]")
