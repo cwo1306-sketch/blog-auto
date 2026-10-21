@@ -74,6 +74,8 @@ class Deduplicator:
         if a.title_key:
             row = self.db.find_by_title_key(a.title_key, lo, hi)
             if row is not None:
+                if row["cluster_id"] is None:   # 니치 외로 걸러진 기사의 재송고
+                    return Decision(2, None, "제외", f"니치 외(제목 동일 ← {row['id']})")
                 return Decision(2, row["cluster_id"], "제외", f"중복(제목) ← {row['id']}")
 
         # 3단계: 72시간 창 안의 대표 기사와 근접 비교

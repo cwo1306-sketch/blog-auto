@@ -41,8 +41,13 @@ python -m naver_cardnews run # import(엑셀→DB) → collect → export(DB→�
 - 걸러진 기사는 버리지 않고 상태 `제외`, 중복사유 `니치 외(...)`로 엑셀에 남겨 기준을 조정할 수 있게 했다.
   대표가 되지 않으므로 중복 클러스터에도 영향을 주지 않는다.
 
-실측: 필터 적용 후 대기 200건 → 116건, 니치 외 86건. 남은 노이즈(예: 대통령의 'AI 답변' 정치 기사)는
-사람이 엑셀에서 거른다.
+실측: 규칙 필터 적용 후 대기 200건 → 116건, 니치 외 86건.
+
+규칙을 통과한 기사 중 **새 클러스터 대표가 되는 것**(중복은 대표를 따라감)에는 Claude Haiku(`claude-haiku-5-5`)에게
+"'AI 뉴스 3분 브리핑' 카드뉴스 소재로 적합한가"를 한 번 더 묻는다(`naver_cardnews/judge.py`의 `on_niche`).
+AI가 곁다리로 언급되는 정치 발언·시황·지자체 행사·채용 홍보를 걸러내는 용도다. 부적합이면 상태 `제외`,
+사유 `니치 외(Haiku 판정)`. `ANTHROPIC_API_KEY`가 없거나 `NAVER_CARDNEWS_NICHE_JUDGE=off`면 건너뛴다.
+호출은 대표 기사 수(실측 110건 안팎)만큼이며 Haiku 요금 기준 한 번 수집에 1원 미만이다.
 
 ## 4단계 중복 제거 (`naver_cardnews/dedup.py`)
 
@@ -61,7 +66,7 @@ python -m naver_cardnews run # import(엑셀→DB) → collect → export(DB→�
 같은 사건(코스피 5700 반등 0.30, 네이버 D2SF 투자 0.33)과 다른 사건이 섞여 있어 이 구간을 Haiku 판정에 맡긴다.
 주의: 네이버 `description`이 기사 본문이 아닌 페이지의 다른 블록(뉴스레터 등)을 담는 경우가 있어 엉뚱한 쌍이
 0.5 이상으로 묶일 수 있다(서울경제 사례). 엑셀의 `중복사유`로 확인 가능.
-Haiku 판정은 `ANTHROPIC_API_KEY`가 있을 때만 켜지고, 없으면 경계 구간은 '다름'으로 둔다.
+Haiku 판정은 `ANTHROPIC_API_KEY`가 있을 때만 켜지고, 없으면 경계 구간은 '다름'으로 둔다. `--no-judge`로 두 판정을 모두 끈다.
 
 ## 엑셀 큐 (`naver_cardnews/queue.py`)
 

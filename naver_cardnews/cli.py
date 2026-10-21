@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", type=Path, help="엑셀 경로")
     p.add_argument("--per-keyword", type=int, help="키워드당 최대 건수 (≤1000)")
     p.add_argument("--days", type=int, help="수집 기간(일)")
-    p.add_argument("--no-judge", action="store_true", help="경계 구간 Haiku 판정 끄기")
+    p.add_argument("--no-judge", action="store_true", help="Haiku 판정(같은 사건·니치 적합) 모두 끄기")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.days:
         s.max_age_days = args.days
     if args.no_judge:
-        s.judge_enabled = False
+        s.judge_enabled = s.niche_judge_enabled = False
 
     if args.command in ("run", "collect") and not (s.client_id and s.client_secret):
         print("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 가 비어 있습니다. .env.example을 .env로 복사해 채우세요.",
@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     judge = None
-    if args.command in ("run", "collect") and s.judge_enabled and s.anthropic_api_key:
+    if args.command in ("run", "collect") and (s.judge_enabled or s.niche_judge_enabled) and s.anthropic_api_key:
         from .judge import HaikuJudge
         judge = HaikuJudge(s.anthropic_api_key)
 

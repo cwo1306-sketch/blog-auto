@@ -14,8 +14,10 @@ def make(aid, title, desc="", press="a.com", pub=NOW, keyword="AI"):
 
 def store(db, dedup, art):
     d = dedup.decide(art)
-    cid = d.cluster_id if d.cluster_id is not None else db.next_cluster_id()
-    db.insert(art, cid, d.cluster_id is None, d.status, d.reason)
+    if d.stage == 0:
+        db.insert(art, db.next_cluster_id(), True, "대기")
+    else:
+        db.insert(art, d.cluster_id, False, "제외", d.reason)
     db.conn.commit()
     return d
 
@@ -57,6 +59,9 @@ def test_stage3_borderline_uses_judge():
         def same_event(self, *a):
             return True
 
+        def on_niche(self, *a):
+            return True
+
     db = Database(":memory:")
     dd = Deduplicator(db, threshold=0.5, borderline=0.35, judge=YesJudge())
     store(db, dd, make("001_1", "삼성전자 HBM4 양산 시작", "삼성전자가 차세대 HBM4 양산을 시작했다고 밝혔다"))
@@ -75,7 +80,6 @@ def test_stage4_already_posted():
     db.conn.commit()
     d = store(db, dd, make("002_1", "테슬라 로보택시, 서울 강남 시범 운행 개시", desc, press="b.com"))
     assert d.stage == 4 and d.reason.startswith("기게시")
-    assert db.get("002_1")["is_representative"] == 1  # 자기 클러스터의 대표이지만 상태는 제외
     assert db.get("002_1")["status"] == "제외"
 
 

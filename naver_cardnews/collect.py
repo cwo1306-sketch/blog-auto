@@ -100,6 +100,7 @@ class Report:
     non_naver: int = 0
     too_old: int = 0
     off_niche: int = 0
+    off_niche_ai: int = 0
     new_clusters: int = 0
     by_stage: dict[int, int] = field(default_factory=dict)
     judge_calls: int = 0
@@ -109,7 +110,8 @@ class Report:
         names = {1: "URL", 2: "제목", 3: "근접", 4: "기게시"}
         stages = ", ".join(f"{names[k]} {v}" for k, v in sorted(self.by_stage.items()))
         parts = [f"API {self.fetched}건", f"네이버뉴스 아님 {self.non_naver}건",
-                 f"기간 초과 {self.too_old}건", f"니치 외 {self.off_niche}건",
+                 f"기간 초과 {self.too_old}건",
+                 f"니치 외 {self.off_niche}건" + (f" (+Haiku {self.off_niche_ai}건)" if self.off_niche_ai else ""),
                  f"신규 대기 {self.new_clusters}건",
                  f"중복 {sum(self.by_stage.values())}건" + (f" ({stages})" if stages else "")]
         if self.judge_calls:
@@ -125,7 +127,9 @@ def collect(settings: Settings, db: Database, client: NaverNewsClient | None = N
                                        interval=settings.request_interval)
     dedup = Deduplicator(db, threshold=settings.sim_threshold, borderline=settings.sim_borderline,
                          window_hours=settings.cluster_window_hours,
-                         posted_days=settings.posted_window_days, judge=judge)
+                         posted_days=settings.posted_window_days,
+                         judge=judge if settings.judge_enabled else None)
+    niche_judge = judge if (judge is not None and settings.niche_judge_enabled) else None
     report = Report()
     run_id = db.start_run()
     cutoff = datetime.now(timezone.utc) - timedelta(days=settings.max_age_days)
@@ -166,15 +170,22 @@ def collect(settings: Settings, db: Database, client: NaverNewsClient | None = N
                     continue
 
                 d = dedup.decide(article)
-                cluster_id = d.cluster_id if d.cluster_id is not None else db.next_cluster_id()
-                is_rep = d.cluster_id is None   # 새 클러스터면 대표 (4단계 기게시도 자기 클러스터의 대표)
-                db.insert(article, cluster_id, is_rep, d.status, d.reason)
+                if d.stage == 0 and niche_judge is not None:
+                    # 새 클러스터 대표가 될 기사만 Haiku에게 묻는다 (중복은 대표 판정을 따라간다)
+                    verdict = niche_judge.on_niche(article.title, article.description)
+                    if verdict is False:
+                        db.insert(article, None, False, "제외", "니치 외(Haiku 판정)")
+                        report.off_niche_ai += 1
+                        continue
                 if d.stage == 0:
+                    db.insert(article, db.next_cluster_id(), True, "대기")
                     report.new_clusters += 1
                 else:
+                    # 2·3단계는 기존 클러스터에 합류, 4단계(기게시)·니치 외 재송고는 클러스터 없이 제외
+                    db.insert(article, d.cluster_id, False, "제외", d.reason)
                     report.by_stage[d.stage] = report.by_stage.get(d.stage, 0) + 1
 
-    report.judge_calls = dedup.judge_calls
+    report.judge_calls = getattr(judge, "calls", dedup.judge_calls)
     db.refresh_scores()
     db.finish_run(run_id, report.summary())
     return report

@@ -90,3 +90,33 @@ def test_excel_lock_detected(tmp_path: Path):
         assert False, "lock not detected"
     except ExcelLocked:
         pass
+
+
+def test_niche_judge_rejects_only_new_representatives(tmp_path: Path):
+    now = datetime.now(timezone.utc)
+    calls = []
+
+    class Judge:
+        def same_event(self, *a):
+            return False
+
+        def on_niche(self, title, desc):
+            calls.append(title)
+            return "국무회의" not in title
+
+    data = {"AI": [
+        item("001", "1", "이 대통령, 국무회의서 AI 답변 공개", "제미나이에 물어봤다", now, "https://a.com/1"),
+        item("002", "2", "[속보] 이 대통령, 국무회의서 AI 답변 공개", "제미나이에 물어봤다", now, "https://b.com/2"),
+        item("003", "3", "오픈AI, 챗GPT에 대화 잠금 기능 도입", "개인정보 보호 강화", now, "https://c.com/3"),
+    ]}
+    s = Settings(client_id="x", client_secret="y", db_path=tmp_path / "t.db",
+                 output_path=tmp_path / "q.xlsx", keywords=["AI"], topic_terms=["AI"])
+    db = Database(s.db_path)
+    rep = collect(s, db, client=FakeClient(data), judge=Judge())
+    assert rep.off_niche_ai == 1 and rep.new_clusters == 1
+    assert db.get("001_1")["dup_reason"] == "니치 외(Haiku 판정)"
+    # 002는 니치 외 기사(001)와 제목이 같아 판정 호출 없이 함께 제외
+    assert db.get("002_2")["dup_reason"].startswith("니치 외(제목 동일")
+    assert db.get("002_2")["is_representative"] == 0
+    assert db.get("003_3")["status"] == "대기"
+    assert calls == ["이 대통령, 국무회의서 AI 답변 공개", "오픈AI, 챗GPT에 대화 잠금 기능 도입"]
