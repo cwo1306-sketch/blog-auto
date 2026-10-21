@@ -139,9 +139,19 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  판정 {d['article_id']} v{d['version']}: {ev.scores} 총점 {ev.total}", file=sys.stderr)
             print(f"LLM 판정 {n}건")
         if args.command == "calibrate":
-            from .rubric import agreement_report, verdict
+            from .rubric import agreement_report, total_report, verdict
+            tr = total_report(db.judge_human_totals())
+            print(f"[총점 비교] 판정기·사람 {tr['n']}건")
+            if tr["n"]:
+                rho = tr["spearman"]
+                print(f" - 순위 상관(스피어만) {rho if rho is not None else '표본 부족'} · 평균 차 {tr['bias']:+.2f} "
+                      f"(판정기가 {'후함' if tr['bias'] > 0.3 else '박함' if tr['bias'] < -0.3 else '비슷'}) · 평균 절대오차 {tr['mae']}")
+                for g in tr["largest_gaps"]:
+                    print(f"   {g['id']}: 판정 {g['judge']} vs 사람 {g['human']} ({g['gap']:+.2f})")
+                if tr["n"] < 20:
+                    print(f" - 표본 {tr['n']}건: 20건 이상이어야 판정기 신뢰도를 말할 수 있습니다")
             rep = agreement_report(db.judge_human_pairs())
-            print(f"판정기·사람 쌍 {rep['n']}건")
+            print(f"[축별 비교] 5축 모두 채점된 쌍 {rep['n']}건")
             for line in verdict(rep):
                 print(" -", line)
         if args.command == "feedback":

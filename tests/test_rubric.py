@@ -94,3 +94,30 @@ def test_scores_sheet_export_and_human_import(tmp_path):
     assert import_scores(db, out) == 0   # 변화 없음
     pairs = db.judge_human_pairs()
     assert len(pairs) == 1 and pairs[0][0]["fact"] == 4 and pairs[0][1]["fact"] == 3
+
+
+def test_spearman_and_total_report():
+    assert rubric.spearman([1, 2, 3], [1, 2, 3]) == 1.0
+    assert rubric.spearman([2.3, 2.5, 2.5], [5, 3, 3]) == -1.0
+    assert rubric.spearman([1, 2], [1, 2]) is None
+    tr = rubric.total_report([("a", 2.3, 5.0), ("b", 2.5, 3.0), ("c", 2.5, 3.0)])
+    assert tr["n"] == 3 and tr["bias"] == -1.23 and tr["largest_gaps"][0]["id"] == "a"
+
+
+def test_overall_only_human_score_import(tmp_path):
+    db = Database(tmp_path / "t.db")
+    db.insert(Article("002_2", "AI", "기사", "a.com", "2026-10-21T00:00:00+00:00", "https://n.news.naver.com/article/002/2", "", "", normalize_title("기사")), 1, True, "대기")
+    v = db.save_draft("002_2", FULL, [], "ai", {})
+    db.save_evaluation("002_2", v, "judge", {a: 2 for a in rubric.AXES}, 2.0, {})
+    out = tmp_path / "q.xlsx"
+    export_queue(db, out)
+    wb = load_workbook(out); ws = wb["채점"]
+    header = [c.value for c in ws[1]]
+    ws.cell(2, header.index("사람 총점") + 1).value = 5
+    wb.save(out)
+    assert import_scores(db, out) == 1
+    h = db.evaluation("002_2", v, "human")
+    assert h["total"] == 5.0 and json.loads(h["scores_json"]) == {} and json.loads(h["detail_json"])["overall_only"]
+    assert db.judge_human_totals() == [("002_2", 2.0, 5.0)]
+    assert db.judge_human_pairs() == []          # 축별 보정에는 안 쓰인다
+    assert import_scores(db, out) == 0           # 다시 반입해도 변화 없음

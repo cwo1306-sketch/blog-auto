@@ -312,13 +312,22 @@ class Database:
             "ORDER BY d.created_at DESC LIMIT ?", (limit,)
         ).fetchall()
 
+    def judge_human_totals(self) -> list[tuple[str, float, float]]:
+        """(article_id, 판정 총점, 사람 총점) — 사람이 총점만 매긴 경우도 포함."""
+        rows = self.conn.execute(
+            "SELECT j.article_id, j.total AS jt, h.total AS ht FROM evaluations j JOIN evaluations h "
+            "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source='judge' "
+            "AND j.id=(SELECT MAX(id) FROM evaluations x WHERE x.article_id=j.article_id AND x.version=j.version AND x.source='judge')"
+        ).fetchall()
+        return [(r["article_id"], float(r["jt"]), float(r["ht"])) for r in rows]
+
     def judge_human_pairs(self) -> list[tuple[dict, dict]]:
         import json
         rows = self.conn.execute(
             "SELECT j.scores_json AS j, h.scores_json AS h FROM evaluations j JOIN evaluations h "
             "ON h.article_id=j.article_id AND h.version=j.version AND h.source='human' WHERE j.source='judge'"
         ).fetchall()
-        return [(json.loads(r["j"]), json.loads(r["h"])) for r in rows]
+        return [(json.loads(r["j"]), json.loads(r["h"])) for r in rows if json.loads(r["h"])]   # 총점만 매긴 행은 축별 보정에서 제외
 
     # --- 사용 이미지 기록 --------------------------------------------------
     def image_used(self, source: str, external_id: str) -> bool:

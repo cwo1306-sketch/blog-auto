@@ -161,6 +161,41 @@ def agreement_report(pairs: list[tuple[dict, dict]]) -> dict:
     return out
 
 
+def spearman(a: list[float], b: list[float]) -> float | None:
+    """스피어만 순위 상관 (동점은 평균 순위). 표본 3개 미만이면 None."""
+    n = len(a)
+    if n < 3:
+        return None
+
+    def ranks(v):
+        order = sorted(range(n), key=lambda i: v[i])
+        r = [0.0] * n
+        i = 0
+        while i < n:
+            j = i
+            while j + 1 < n and v[order[j + 1]] == v[order[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                r[order[k]] = (i + j) / 2 + 1
+            i = j + 1
+        return r
+    ra, rb = ranks(a), ranks(b)
+    ma, mb = mean(ra), mean(rb)
+    num = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
+    den = (sum((x - ma) ** 2 for x in ra) * sum((y - mb) ** 2 for y in rb)) ** 0.5
+    return round(num / den, 3) if den else None
+
+
+def total_report(totals: list[tuple[str, float, float]]) -> dict:
+    if not totals:
+        return {"n": 0}
+    j = [t[1] for t in totals]; h = [t[2] for t in totals]
+    gaps = sorted(totals, key=lambda t: -abs(t[1] - t[2]))
+    return {"n": len(totals), "spearman": spearman(j, h), "bias": round(mean(j) - mean(h), 2),
+            "mae": round(mean(abs(x - y) for x, y in zip(j, h)), 2),
+            "largest_gaps": [{"id": t[0], "judge": t[1], "human": t[2], "gap": round(t[1] - t[2], 2)} for t in gaps[:5]]}
+
+
 def verdict(report: dict) -> list[str]:
     lines = []
     for a, r in report["axes"].items():

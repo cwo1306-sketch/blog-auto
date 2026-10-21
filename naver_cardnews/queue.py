@@ -183,7 +183,7 @@ def _write_drafts_sheet(wb: Workbook, db: Database) -> int:
 
 
 SCORE_SHEET = "채점"
-HUMAN_COLS = [f"사람 {AXIS_KO[a]}" for a in AXES] + ["사람 메모"]
+HUMAN_COLS = ["사람 총점"] + [f"사람 {AXIS_KO[a]}" for a in AXES] + ["사람 메모"]   # 총점만 매겨도 되고, 5축을 다 매기면 총점은 자동 계산
 
 
 def _write_scores_sheet(wb: Workbook, db: Database) -> int:
@@ -214,7 +214,7 @@ def _write_scores_sheet(wb: Workbook, db: Database) -> int:
                   + [js.get(a, "") for a in AXES]
                   + [j["total"] if j else "", "\n".join(jd.get("unsupported_claims", [])), jd.get("summary", ""),
                      pm["avg_words"], pm["max_words"], pm["long_sentences"]]
-                  + [hs.get(a, "") for a in AXES] + [hd.get("memo", "")])
+                  + [h["total"] if h else ""] + [hs.get(a, "") for a in AXES] + [hd.get("memo", "")])
         for c, v in enumerate(values, start=1):
             cell = ws.cell(row=r, column=c, value=v)
             name = cols[c - 1]
@@ -226,7 +226,7 @@ def _write_scores_sheet(wb: Workbook, db: Database) -> int:
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
         ws.row_dimensions[r].height = 60
     if rows:
-        dv = DataValidation(type="whole", operator="between", formula1="1", formula2="5", allow_blank=True)
+        dv = DataValidation(type="decimal", operator="between", formula1="1", formula2="5", allow_blank=True)
         ws.add_data_validation(dv)
         for name in HUMAN_COLS[:-1]:
             col = get_column_letter(cols.index(name) + 1)
@@ -253,18 +253,27 @@ def import_scores(db: Database, path: Path) -> int:
         if not values or values[header.index("id")] is None:
             continue
         row = dict(zip(header, values))
+        memo = str(row.get("사람 메모") or "").strip()
+        aid, version = str(row["id"]).strip(), int(row.get("버전") or 0)
         try:
             scores = {a: int(row.get(f"사람 {AXIS_KO[a]}")) for a in AXES}
+            if not all(1 <= v <= 5 for v in scores.values()):
+                raise ValueError
+            total = round(sum(scores[a] * WEIGHTS[a] for a in AXES), 2)
         except (TypeError, ValueError):
-            continue   # 다 채워지지 않은 행
-        if not all(1 <= v <= 5 for v in scores.values()):
-            continue
-        aid, version = str(row["id"]).strip(), int(row.get("버전") or 0)
+            # 5축이 다 없으면 총점만 받는다 (축별 보정에는 안 쓰이고 총점 비교에만 쓰인다)
+            try:
+                total = float(row.get("사람 총점"))
+            except (TypeError, ValueError):
+                continue
+            if not 1 <= total <= 5:
+                continue
+            scores = {}
         prev = db.evaluation(aid, version, "human")
-        if prev and json.loads(prev["scores_json"]) == scores and json.loads(prev["detail_json"]).get("memo", "") == str(row.get("사람 메모") or "").strip():
+        if prev and json.loads(prev["scores_json"]) == scores and abs(prev["total"] - total) < 1e-9 \
+                and json.loads(prev["detail_json"]).get("memo", "") == memo:
             continue
-        total = round(sum(scores[a] * WEIGHTS[a] for a in AXES), 2)
-        db.save_evaluation(aid, version, "human", scores, total, {"memo": str(row.get("사람 메모") or "").strip()})
+        db.save_evaluation(aid, version, "human", scores, total, {"memo": memo, "overall_only": not scores})
         saved += 1
     wb.close()
     return saved
