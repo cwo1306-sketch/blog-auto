@@ -87,7 +87,31 @@ Haiku 판정은 `ANTHROPIC_API_KEY`가 있을 때만 켜지고, 없으면 경계
 python -m pytest -q
 ```
 
+## 3단계 부품: 스톡 검색 + 비전 선택 + used_images + 숫자 카드
+
+설계는 `docs/STAGE3_DESIGN.md`. 이 저장소에는 로컬 `make_card.py`에 끼울 **부품**이 들어 있다.
+
+| 모듈 | 역할 |
+|---|---|
+| `naver_cardnews/stock.py` | Pexels(기본)·Unsplash(선택) 세로 사진 검색. 검색어 여러 개 × 소스 여러 개 → (소스, id) 중복 제거 |
+| `naver_cardnews/vision_pick.py` | 후보 썸네일을 Haiku 5.5에 보여 얼굴·글자·로고·브랜드 연상은 탈락, 관련성·하단 여백·톤 점수로 선택 |
+| `naver_cardnews/imagehash.py` | 의존성 없는 dHash. 같은 사진의 리사이즈본·다른 소스 재등록을 잡는다 |
+| `db.py` `used_images` | 쓴 사진 기록. (소스, id) 일치 또는 30일 내 해밍 거리 ≤ 8이면 재사용 금지 |
+| `naver_cardnews/stat_card.py` + `templates/stat_card.html` | 숫자 카드 렌더(Playwright). `validate_stat`이 value+unit ⊂ source_quote ⊂ 원문을 검사 |
+
+```bash
+# 한 장 고르기: 검색 → 썸네일 → 비전 검수 → used_images 검사 → 원본 저장 + 기록 (s1_pick.json에 판정 근거)
+python -m naver_cardnews pick-image --article 366_0001234567 --slide 1 \
+  --headline "카카오, AI의 눈을 공개" --concept "이미지를 이해하는 시각 모델" \
+  -q "abstract glass lens light" -q "camera aperture macro dark"
+# 숫자 카드
+python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용 절감률" \
+  --quote "AI 토큰 비용을 55% 줄였다고 밝혔다" --page 3 --out data/images/demo/stat_55.png
+```
+`.env`: `PEXELS_API_KEY`(필수), `UNSPLASH_ACCESS_KEY`(선택), `ANTHROPIC_API_KEY`(비전 검수). 숫자 카드는 Pretendard 폰트가
+설치돼 있어야 하고(없으면 시스템 고딕으로 대체), Chromium 경로가 다르면 `CHROMIUM_PATH`로 지정한다.
+
 ## 다음 단계 (HANDOFF 로드맵)
 
 2. 승인 건 일괄 제작: `status='승인'`인 행의 `naver_link`를 `make_card.py`에 넘기고 `카드폴더` 기록
-3. 숫자 카드 템플릿 + `used_photos` + 비전 사진 선택
+3. 위 부품을 `make_card.py`에 통합 (writer 스키마 `slide_type`/`image.queries`/`stat`, render 분기)

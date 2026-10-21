@@ -39,6 +39,23 @@ CREATE INDEX IF NOT EXISTS idx_articles_pub_date ON articles(pub_date);
 CREATE INDEX IF NOT EXISTS idx_articles_cluster ON articles(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 
+CREATE TABLE IF NOT EXISTS used_images (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id  TEXT NOT NULL,              -- oid_aid
+    slide_no    INTEGER NOT NULL,
+    source      TEXT NOT NULL,              -- pexels | unsplash | generated
+    external_id TEXT,                       -- 스톡 사진 id
+    query       TEXT NOT NULL DEFAULT '',   -- 검색어 또는 프롬프트
+    dhash       TEXT NOT NULL,              -- 16 hex = 64bit
+    file_path   TEXT NOT NULL DEFAULT '',
+    photographer TEXT NOT NULL DEFAULT '',
+    page_url    TEXT NOT NULL DEFAULT '',
+    used_at     TEXT NOT NULL,
+    posted      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_used_images_ext ON used_images(source, external_id);
+CREATE INDEX IF NOT EXISTS idx_used_images_article ON used_images(article_id);
+
 CREATE TABLE IF NOT EXISTS collect_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT NOT NULL,
@@ -183,6 +200,35 @@ class Database:
         values.append(article_id)
         self.conn.execute(f"UPDATE articles SET {', '.join(fields)} WHERE id=?", values)
         return True
+
+    # --- 사용 이미지 기록 --------------------------------------------------
+    def image_used(self, source: str, external_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM used_images WHERE source=? AND external_id=? LIMIT 1", (source, external_id)
+        ).fetchone()
+        return row is not None
+
+    def similar_image(self, dhash_hex: str, max_distance: int = 8, days: int = 30) -> sqlite3.Row | None:
+        """최근 N일 안에 dHash 해밍 거리가 max_distance 이하인 기록이 있으면 돌려준다."""
+        from .imagehash import from_hex, hamming  # 순환 import 방지
+        since = (datetime.now(timezone.utc) - __import__("datetime").timedelta(days=days)).isoformat()
+        target = from_hex(dhash_hex)
+        for row in self.conn.execute("SELECT * FROM used_images WHERE used_at>=?", (since,)):
+            if hamming(target, from_hex(row["dhash"])) <= max_distance:
+                return row
+        return None
+
+    def record_image(self, article_id: str, slide_no: int, source: str, external_id: str | None,
+                     query: str, dhash_hex: str, file_path: str = "", photographer: str = "",
+                     page_url: str = "") -> int:
+        cur = self.conn.execute(
+            "INSERT INTO used_images (article_id, slide_no, source, external_id, query, dhash, file_path, "
+            "photographer, page_url, used_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (article_id, slide_no, source, external_id, query, dhash_hex, file_path, photographer,
+             page_url, utcnow()),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
 
     def start_run(self) -> int:
         cur = self.conn.execute("INSERT INTO collect_runs (started_at) VALUES (?)", (utcnow(),))

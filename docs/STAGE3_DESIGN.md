@@ -1,8 +1,10 @@
-# 3단계 설계: 이미지 생성(Gemini 3.1 Flash) + 숫자 카드 + 사용 이미지 기록 + 비전 검수
+# 3단계 설계: 무료 스톡 검색(Pexels+Unsplash) + 비전 선택 + used_images + 숫자 카드
 
-로드맵 3단계(HANDOFF 7장)를 **이미지 소스를 Gemini 3.1 Flash 생성으로 전환**하는 전제로 다시 설계한다.
-2026-10-21 4개 모델 비교에서 Gemini 3.1 Flash가 유리 렌즈 질감·피사계 심도·하단 여백(텍스트 올릴 공간)에서
-가장 좋았다. 대상 코드는 로컬 프로젝트(`make_card.py`, `writer.py`, `validate.py`, `pexels.py`, `render.py`,
+로드맵 3단계(HANDOFF 7장). **이미지 소스는 무료 스톡 검색**으로 가고, 품질은 소스가 아니라 **고르는 방식**(검색어 2종,
+비전 검수, 재사용 금지, 숫자 카드로 사진 수 자체를 줄임)으로 끌어올린다. 2026-10-21 결정: 생성(Gemini 3.1 Flash가
+4개 모델 비교에서 최선)은 비용·키 발급 문제로 보류하고, 2주 테스트 지표에서 "사진이 뻔하다"가 문제로 확인되면 표지
+1장에만 생성을 붙인다. 아래 4장은 그때를 위해 남겨 둔 생성 경로이며, 지금 구현하는 경로는 **4-S장(검색)**이다.
+구현된 부품은 이 저장소 `naver_cardnews/stock.py`, `vision_pick.py`, `imagehash.py`, `db.py(used_images)`, `stat_card.py`. 대상 코드는 로컬 프로젝트(`make_card.py`, `writer.py`, `validate.py`, `pexels.py`, `render.py`,
 `templates/card.css`)이고, 이 저장소의 `naver_cardnews/`(1단계)와는 SQLite(`data/news.db`)로 이어진다.
 
 > 전제: 2단계(승인 건 일괄 제작)가 `status='승인'` 행을 `make_card.py`에 넘기는 배치 루프를 갖는다.
@@ -62,7 +64,18 @@ Writer 프롬프트에 추가할 규칙:
 
 ---
 
-## 4. 이미지 생성 모듈 `imagegen.py` (신규)
+## 4-S. 스톡 검색 모듈 `stock.py` (구현됨, 기본 경로)
+
+- Pexels `search`(orientation=portrait, size=large) + Unsplash `search/photos`(orientation=portrait, content_filter=high).
+  Pexels는 `User-Agent` 헤더 필수. 세로가 아니거나 높이 1350px 미만은 버린다.
+- Writer가 장마다 **검색어 2개**(은유형 + 구체형, 영어)를 낸다: `image.queries: ["abstract glass lens light", "camera aperture macro dark"]`.
+  검색어에 실존 기업·제품·인물명은 넣지 않는다.
+- 검색어 2개 × 소스 2개 × 6장 = 최대 24후보 → (소스, id) 중복 제거 → 썸네일 다운로드 → 5장 비전 검수로.
+- 비용 0. 한도: Pexels 시간당 200회, Unsplash 시간당 50회(데모 키). 게시물당 호출 ≤ 20회.
+- 톤 통일은 사진이 아니라 템플릿에서: 기존 하단 스모크그레이 그라데이션에 더해 사진 전체에 약한 어두운 틴트(검정 25~35%)를 얹는다.
+- 출처 표기: Pexels·Unsplash 라이선스상 필수는 아니지만 `used_images.photographer/page_url`을 기록해 두고 캡션에 쓸 수 있게 한다.
+
+## 4. (보류) 이미지 생성 모듈 `imagegen.py`
 
 ### 4.1 호출
 - 모델: `gemini-3.1-flash-image` (Google AI Studio, `google-genai` SDK). 비교 테스트는 Figma 경유였지만 운영은 Gemini API 직접 호출.
@@ -93,7 +106,7 @@ Photorealistic, high-end tech magazine style.
 
 ---
 
-## 5. 비전 검수·선택 `vision_pick.py` (신규)
+## 5. 비전 검수·선택 `vision_pick.py` (구현됨)
 
 후보 이미지(생성 2장 또는 Pexels 상위 6장 썸네일)를 **Claude에게 이미지로 보여주고** 점수를 매긴다.
 모델은 `claude-haiku-5-5`(비전 지원, 저렴). 판정이 갈리는 표지만 `claude-sonnet-5-5`로 재확인(선택).
@@ -114,7 +127,7 @@ Photorealistic, high-end tech magazine style.
 
 ---
 
-## 6. 사용 이미지 기록 `used_images` (SQLite, `data/news.db`)
+## 6. 사용 이미지 기록 `used_images` (구현됨, SQLite `data/news.db`)
 
 ```sql
 CREATE TABLE used_images (
@@ -138,7 +151,7 @@ CREATE INDEX idx_used_images_phash ON used_images(phash);
 
 ---
 
-## 7. 숫자 카드 템플릿 (`templates/card.css`, `render.py`)
+## 7. 숫자 카드 템플릿 (구현됨: `templates/stat_card.html`, `stat_card.py`)
 
 레이아웃(1080×1350):
 ```
@@ -165,7 +178,7 @@ CREATE INDEX idx_used_images_phash ON used_images(phash);
 
 ```
 writer → validate(수치·글자수) ──┐
-                                  ├─ photo: imagegen(2) → vision_pick → used_images 검사 → 저장
+                                  ├─ photo: stock 검색(2질의) → vision_pick → used_images 검사 → 원본 저장+기록
                                   ├─ stat : (이미지 없음) → used_images 기록 없음
                                   └─ plain: 단색
 → render(템플릿 분기) → render QA(기존) → meta.json(usage·vision·image 기록)
@@ -179,8 +192,8 @@ writer → validate(수치·글자수) ──┐
 
 | 항목 | 호출 | 비고 |
 |---|---|---|
-| Gemini 이미지 생성 | 3~5장 × 2후보 = 6~10장 | 장당 단가는 Google 요금표 확인 후 기입 (`imagegen.py`가 usage를 기록하므로 첫 10건 실측으로 확정) |
-| 비전 검수 Haiku 5.5 | 6~10회, 이미지 1장 + 짧은 텍스트 | 수원 단위 |
+| 스톡 검색 | ≤ 20회 | 0원 |
+| 비전 검수 Haiku 5.5 | 사진 장당 ≤ 5회 → 게시물당 15~25회, 이미지 1장 + 짧은 텍스트 | 수원 단위 |
 | 원고 Sonnet 5.5 | 기존과 동일 | |
 
 가드: `meta.json` usage 합산 → 월 상한(5만 원) 도달 시 생성 중단·Pexels 폴백·Discord 알림. 첫 2주는 하루 1~2건이라 실측 후 상한을 조정한다.
@@ -208,7 +221,8 @@ writer → validate(수치·글자수) ──┐
 
 ## 12. 남은 결정
 
-- Gemini API 키 발급(Google AI Studio) — 결제 계정 연결 필요
+- Unsplash 키 발급 여부(없으면 Pexels만으로 시작)
+- Gemini 생성은 2주 테스트 후 재검토
 - stat 카드 배경: 순수 그라데이션 vs 아주 약한 생성 텍스처(비용 추가) → 그라데이션으로 시작 권장
 - 표지만 Sonnet 비전 재확인을 켤지(품질 vs 비용)
 - 생성 이미지 보관 기간과 백업(이전에 `output/`이 비워진 적 있음 → R2 검증 후 업로드)

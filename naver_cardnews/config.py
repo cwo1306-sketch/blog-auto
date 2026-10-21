@@ -50,6 +50,9 @@ class Settings:
     judge_enabled: bool = True          # 경계 구간 같은 사건 판정 (Haiku)
     niche_judge_enabled: bool = True    # 규칙 필터 통과 기사의 니치 적합 판정 (Haiku)
     anthropic_api_key: str = ""
+    pexels_api_key: str = ""
+    unsplash_access_key: str = ""
+    images_dir: Path = PROJECT_ROOT / "data" / "images"
 
 
 def _clean_list(words) -> list[str]:
@@ -96,4 +99,6 @@ def load_settings(env_file: Path | None = None, keywords_file: Path | None = Non
         judge_enabled=env("NAVER_CARDNEWS_JUDGE", "on").lower() not in ("off", "0", "false", "no"),
         niche_judge_enabled=env("NAVER_CARDNEWS_NICHE_JUDGE", "on").lower() not in ("off", "0", "false", "no"),
         anthropic_api_key=env("ANTHROPIC_API_KEY", ""),
+        pexels_api_key=env("PEXELS_API_KEY", ""),
+        unsplash_access_key=env("UNSPLASH_ACCESS_KEY", ""),
     )

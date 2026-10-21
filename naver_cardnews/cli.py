@@ -4,6 +4,8 @@
     python -m naver_cardnews export     # SQLite → 엑셀 재생성
     python -m naver_cardnews import     # 엑셀의 상태/메모 → SQLite
     python -m naver_cardnews stats
+    python -m naver_cardnews pick-image --article 015_1 --slide 1 --headline "…" --concept "…" -q "abstract lens" -q "server room"
+    python -m naver_cardnews stat-card --value 55 --unit % --label "AI 토큰 비용 절감률" --quote "…" --out data/stat.png
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from .queue import ExcelLocked, export_queue, import_queue
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="naver_cardnews", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["run", "collect", "export", "import", "stats"])
+    p.add_argument("command", choices=["run", "collect", "export", "import", "stats", "pick-image", "stat-card"])
     p.add_argument("--keywords", type=Path, help="키워드 YAML (기본 keywords.yaml)")
     p.add_argument("--db", type=Path)
     p.add_argument("--out", type=Path, help="엑셀 경로")
@@ -30,6 +32,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, help="수집 기간(일)")
     p.add_argument("--no-judge", action="store_true", help="Haiku 판정(같은 사건·니치 적합) 모두 끄기")
     p.add_argument("-v", "--verbose", action="store_true")
+    g = p.add_argument_group("pick-image / stat-card")
+    g.add_argument("--article", help="oid_aid (used_images 기록용)")
+    g.add_argument("--slide", type=int, default=1)
+    g.add_argument("--headline", default="")
+    g.add_argument("--concept", default="", help="사진이 표현할 개념(한국어)")
+    g.add_argument("-q", "--query", action="append", default=[], help="영어 검색어 (여러 번)")
+    g.add_argument("--per-query", type=int, default=6)
+    g.add_argument("--value"); g.add_argument("--unit", default=""); g.add_argument("--label", default="")
+    g.add_argument("--quote", default=""); g.add_argument("--page", type=int, default=3)
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -62,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
         from .judge import HaikuJudge
         judge = HaikuJudge(s.anthropic_api_key)
 
+    if args.command == "stat-card":
+        return _stat_card(args, s)
+    if args.command == "pick-image":
+        return _pick_image(args, s)
+
     db = Database(s.db_path)
     try:
         if args.command in ("run", "import"):
@@ -81,6 +97,71 @@ def main(argv: list[str] | None = None) -> int:
     except ExcelLocked as exc:
         print(exc, file=sys.stderr)
         return 3
+    finally:
+        db.close()
+    return 0
+
+
+def _stat_card(args, s) -> int:
+    from .stat_card import Stat, StatError, render_png, validate_stat
+    if not args.value:
+        print("--value 가 필요합니다", file=sys.stderr); return 2
+    stat = Stat(args.value, args.unit, args.label, args.quote)
+    try:
+        validate_stat(stat)
+    except StatError as exc:
+        print("stat 규칙 위반:", exc, file=sys.stderr); return 2
+    out = args.out or (s.images_dir / "stat_card.png")
+    qa = render_png(stat, Path(out), args.page)
+    print(f"숫자 카드 → {out}  QA={qa}")
+    return 0 if qa["ok"] else 1
+
+
+def _pick_image(args, s) -> int:
+    import json
+    from .stock import PexelsClient, UnsplashClient, download, search_candidates
+    from .vision_pick import HaikuScorer, pick
+    from .imagehash import dhash, to_hex
+    if not args.query:
+        print("-q 검색어가 하나 이상 필요합니다", file=sys.stderr); return 2
+    clients = []
+    if s.pexels_api_key:
+        clients.append(PexelsClient(s.pexels_api_key))
+    if s.unsplash_access_key:
+        clients.append(UnsplashClient(s.unsplash_access_key))
+    if not clients:
+        print("PEXELS_API_KEY 또는 UNSPLASH_ACCESS_KEY 가 필요합니다", file=sys.stderr); return 2
+    if not s.anthropic_api_key:
+        print("비전 검수에 ANTHROPIC_API_KEY 가 필요합니다", file=sys.stderr); return 2
+
+    cands = search_candidates(args.query, clients, per_query=args.per_query)
+    print(f"후보 {len(cands)}장 (소스 {len(clients)}개, 검색어 {len(args.query)}개)", file=sys.stderr)
+    for c in cands:
+        try:
+            c.image_bytes = download(c.thumb_url)
+        except Exception as exc:
+            print(f"  썸네일 실패 {c.key}: {exc}", file=sys.stderr)
+    db = Database(s.db_path)
+    try:
+        scorer = HaikuScorer(s.anthropic_api_key)
+        result = pick(cands, args.headline, args.concept, scorer, db)
+        out_dir = Path(args.out) if args.out else s.images_dir / (args.article or "adhoc")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / f"s{args.slide}_pick.json").write_text(
+            json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        for c, sc in result.scored:
+            mark = "✗" if sc.hard_fail else f"{sc.total:.2f}"
+            print(f"  {mark:>5} {c.source}:{c.external_id} {sc.reason[:60]}", file=sys.stderr)
+        if result.chosen is None:
+            print("적합한 후보 없음 → 재검색 또는 단색 카드로 강등", file=sys.stderr); return 1
+        c = result.chosen
+        full = download(c.full_url)
+        path = out_dir / f"s{args.slide}_{c.source}_{c.external_id}.jpg"
+        path.write_bytes(full)
+        if args.article:
+            db.record_image(args.article, args.slide, c.source, c.external_id, c.query,
+                            to_hex(dhash(c.image_bytes)), str(path), c.photographer, c.page_url)
+        print(f"선택 {c.source}:{c.external_id} ({c.photographer}) → {path}  비전 호출 {scorer.calls}회")
     finally:
         db.close()
     return 0
