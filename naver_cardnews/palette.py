@@ -18,44 +18,67 @@ ROLE_KO = {"bg": "배경(종이)", "bg2": "보조 배경(카드·사진 틀)", "
            "on_deep": "어두운 배경 위 글씨", "pop": "어두운 배경 위 큰 숫자", "mark": "형광펜(강조 줄 배경)"}
 
 PALETTES: dict[str, dict] = {
-    "ocean": {
-        "name": "오션 블루 + 살구 (추천)",
-        "why": "차분한 딥 시안은 뉴스의 신뢰감, 보색인 살구 형광펜은 '쉬운 말' 계정의 친근함을 맡는다. 다루는 기업 브랜드색(카카오 노랑·"
-               "네이버 초록·배민 민트·토스 파랑) 모두와 색상각 30° 이상 떨어져 있다. 웜톤 종이·사진과 쿨톤 브랜드가 대비를 이룬다.",
-        "bg": "#F6F5F1", "bg2": "#EAE8E2", "ink": "#1C2A33", "ink2": "#46545E", "muted": "#66727B",
-        "brand": "#13698F", "on_brand": "#FFFFFF", "line": "#13698F",
-        "deep": "#0E2C3C", "on_deep": "#F6F5F1", "pop": "#8ED3F2", "mark": "#FFD9A8",
-    },
-    "violet": {
-        "name": "바이올렛 (참고)",
-        "why": "AI 제품들이 많이 쓰는 보라라 'AI 뉴스' 연상이 가장 강하다. 다만 토스 파랑과 색상각 15.6°로 기준(20°) 미달이고, 흔한 'AI 보라'라 개성이 약하다.",
-        "bg": "#F6F5F2", "bg2": "#EBE8E3", "ink": "#211C30", "ink2": "#4D4760", "muted": "#6C677B",
-        "brand": "#7A3CE0", "on_brand": "#FFFFFF", "line": "#7A3CE0",
-        "deep": "#21173F", "on_deep": "#F6F5F2", "pop": "#C9B6FF", "mark": "#E7DDFF",
-    },
-    "coral": {
-        "name": "코랄",
-        "why": "따뜻하고 활기찬 주황빨강. 피드에서 가장 눈에 띄지만 '속보·경고' 느낌이 섞이고, 밝은 배경 위 강조선은 더 진한 색으로 분리해야 한다.",
-        "bg": "#F8F5F1", "bg2": "#EFE9E2", "ink": "#2B2320", "ink2": "#5A4F4A", "muted": "#776B65",
-        "brand": "#FF6A45", "on_brand": "#241310", "line": "#D9482A",
-        "deep": "#33201A", "on_deep": "#F8F5F1", "pop": "#FFA48A", "mark": "#FFDCD0",
-    },
-    "lime": {
-        "name": "라임",
-        "why": "테크 브랜드에서 유행하는 형광 연두. 흰 글씨를 못 얹어 마무리 장 글씨가 어두워야 하고, 강조선은 올리브로 분리해야 한다.",
-        "bg": "#F5F6F0", "bg2": "#E9ECDF", "ink": "#1F231A", "ink2": "#4C5243", "muted": "#6A7060",
-        "brand": "#C3EC3A", "on_brand": "#1A1F10", "line": "#557000",
-        "deep": "#1F2716", "on_deep": "#F5F6F0", "pop": "#D4FA4E", "mark": "#E6F7A6",
-    },
-    "yellow_v21": {   # 비교용: 직전 v2.1
-        "name": "노랑 (이전 v2.1)",
-        "why": "직전 팔레트. 출처 글씨 대비 2.98:1, 강조선 대비 1.17:1, 마무리 노랑이 카카오 노랑과 색상각 0.9°.",
-        "bg": "#F8F6F1", "bg2": "#EEEAE2", "ink": "#2A2926", "ink2": "#5E5B55", "muted": "#948F86",
-        "brand": "#FFE566", "on_brand": "#2A2926", "line": "#FFE566",
-        "deep": "#35332F", "on_deep": "#F8F6F1", "pop": "#FFEF8A", "mark": "#FFEF8A",
-    },
+    # ---- 순환 사용(rotation) 템플릿: 모두 대비·눈 편안함·기업 색 회피 검사를 통과해야 한다 ----
+    "ocean": {"name": "오션", "rotation": True, "mode": "light",
+              "why": "차분한 딥 시안 + 복숭아빛 형광펜. 신뢰감 있는 기본 톤.",
+              "bg": "#F6F5F1", "bg2": "#EAE8E2", "ink": "#1C2A33", "ink2": "#46545E", "muted": "#66727B",
+              "brand": "#13698F", "on_brand": "#FFFFFF", "line": "#13698F",
+              "deep": "#0E2C3C", "on_deep": "#F6F5F1", "pop": "#8ED3F2", "mark": "#F8D3C6"},
+    "clay": {"name": "클레이", "rotation": True, "mode": "light",
+             "why": "흙빛 테라코타 + 옅은 하늘 형광펜(보색). 따뜻하고 부드러운 생활·서비스 소식에 맞다.",
+             "bg": "#F7F3EE", "bg2": "#ECE4DA", "ink": "#2E2420", "ink2": "#584A43", "muted": "#76665E",
+             "brand": "#A0563B", "on_brand": "#FFFFFF", "line": "#A0563B",
+             "deep": "#3A2620", "on_deep": "#F7F3EE", "pop": "#F0B89E", "mark": "#D3E3EE"},
+    "sage": {"name": "세이지", "rotation": True, "mode": "light",
+             "why": "채도를 뺀 세이지 그린 + 라일락 형광펜. 가장 눈이 편한 저채도 조합, 정책·연구 기사에 맞다.",
+             "bg": "#F3F5F0", "bg2": "#E4E9E1", "ink": "#22302A", "ink2": "#495A52", "muted": "#5E6C64",
+             "brand": "#4C6D60", "on_brand": "#FFFFFF", "line": "#4C6D60",
+             "deep": "#1F332B", "on_deep": "#F3F5F0", "pop": "#A9D4C0", "mark": "#E2DAF0"},
+    "plum": {"name": "플럼", "rotation": True, "mode": "light",
+             "why": "먼지 낀 자두색 + 옅은 민트 형광펜. 사람·사회 영향 기사에 부드럽게 어울린다.",
+             "bg": "#F7F3F4", "bg2": "#EDE5E8", "ink": "#2C2228", "ink2": "#584852", "muted": "#76656F",
+             "brand": "#8A4E6A", "on_brand": "#FFFFFF", "line": "#8A4E6A",
+             "deep": "#33202A", "on_deep": "#F7F3F4", "pop": "#EFB6CC", "mark": "#D6EADD"},
+    "mono": {"name": "뉴스프린트", "rotation": True, "mode": "light",
+             "why": "신문지 회백색 + 차콜, 모래빛 형광펜. 색을 거의 쓰지 않아 숫자·사실 중심 기사에 맞다.",
+             "bg": "#F4F2EE", "bg2": "#E6E3DD", "ink": "#232323", "ink2": "#4C4C4C", "muted": "#6D6D6D",
+             "brand": "#343A44", "on_brand": "#F4F2EE", "line": "#343A44",
+             "deep": "#2A2E35", "on_deep": "#F4F2EE", "pop": "#E8D2B6", "mark": "#E2D6C6"},
+    "slate": {"name": "슬레이트(다크)", "rotation": True, "mode": "dark",
+              "why": "어두운 청회색 바탕 + 순백이 아닌 미색 글씨. 밤 시간대 피드에서 눈부심이 가장 적다.",
+              "bg": "#1D232B", "bg2": "#29313B", "ink": "#E6E2DA", "ink2": "#C2BFB7", "muted": "#9B9B97",
+              "brand": "#7CAFD3", "on_brand": "#132029", "line": "#7CAFD3",
+              "deep": "#12171D", "on_deep": "#E6E2DA", "pop": "#9DCDEB", "mark": "#3A5165"},
+    # ---- 참고용(순환 제외) ----
+    "violet": {"name": "바이올렛 (참고)", "rotation": False, "mode": "light",
+               "why": "AI 연상 최강이지만 토스 파랑과 색상각 15.6°.",
+               "bg": "#F6F5F2", "bg2": "#EBE8E3", "ink": "#211C30", "ink2": "#4D4760", "muted": "#6C677B",
+               "brand": "#7A3CE0", "on_brand": "#FFFFFF", "line": "#7A3CE0",
+               "deep": "#21173F", "on_deep": "#F6F5F2", "pop": "#C9B6FF", "mark": "#E7DDFF"},
+    "coral": {"name": "코랄 (참고)", "rotation": False, "mode": "light",
+              "why": "눈에 띄지만 채도가 높아 마무리 전면 배경으로는 눈이 피로하다.",
+              "bg": "#F8F5F1", "bg2": "#EFE9E2", "ink": "#2B2320", "ink2": "#5A4F4A", "muted": "#776B65",
+              "brand": "#FF6A45", "on_brand": "#241310", "line": "#D9482A",
+              "deep": "#33201A", "on_deep": "#F8F5F1", "pop": "#FFA48A", "mark": "#FFDCD0"},
+    "yellow_v21": {"name": "노랑 (이전 v2.1)", "rotation": False, "mode": "light",
+                   "why": "직전 팔레트. 출처 대비 2.98:1, 강조선 1.17:1, 카카오 노랑과 색상각 0.9°.",
+                   "bg": "#F8F6F1", "bg2": "#EEEAE2", "ink": "#2A2926", "ink2": "#5E5B55", "muted": "#948F86",
+                   "brand": "#FFE566", "on_brand": "#2A2926", "line": "#FFE566",
+                   "deep": "#35332F", "on_deep": "#F8F6F1", "pop": "#FFEF8A", "mark": "#FFEF8A"},
 }
+ROTATION = [k for k, v in PALETTES.items() if v.get("rotation")]
 DEFAULT = "ocean"
+
+
+def pick_rotation(made: int, override: str = "") -> str:
+    """돌려 쓰기: 지금까지 만든 카드 수(made)로 순번을 정해 피드에서 같은 색이 연달아 나오지 않게 한다.
+    override(CARDNEWS_PALETTE)가 있으면 그대로 쓴다."""
+    override = (override or "").strip()
+    if override:
+        if override not in PALETTES:
+            raise ValueError(f"알 수 없는 팔레트: {override} (가능: {', '.join(PALETTES)})")
+        return override
+    return ROTATION[made % len(ROTATION)]
 
 # (전경, 배경, 최소 대비, 설명)
 CHECKS = [
@@ -102,9 +125,38 @@ def delta_e(a: str, b: str) -> float:
     return round(sum((x - y) ** 2 for x, y in zip(la, lb)) ** 0.5, 1)
 
 
+# 눈 편안함 기준 (가독성 하한 + 눈부심·피로 상한)
+COMFORT = {
+    "ink_max": 16.0,          # 제목 대비 상한: 순백·순흑(21:1)은 눈부심(헐레이션)
+    "bg_chroma_max": 8.0,     # 배경 채도 상한 (LCh C): 넓은 면적은 거의 무채색
+    "light_bg_L": (91.0, 97.5),
+    "dark_bg_L": (10.0, 22.0),
+    "brand_chroma_max": 50.0, # 마무리 장 전면 배경 채도 상한
+    "mark_chroma_max": 30.0,  # 형광펜은 부드럽게
+    "mark_visible_de": 8.0,   # 형광펜이 배경과 구분되는 최소 색차(ΔE)
+    "yellow_hue": (80.0, 105.0),   # 형광펜 노랑 계열 제외 (사용자 요청)
+}
+
+
 def audit(name: str) -> list[dict]:
     p = PALETTES[name]
     out = []
+    c = COMFORT
+    L_bg, C_bg, _ = lch(p["bg"])
+    lo, hi = c["dark_bg_L"] if p.get("mode") == "dark" else c["light_bg_L"]
+    r = contrast(p["ink"], p["bg"])
+    out.append({"pair": "ink/bg", "what": "눈부심 상한(제목 대비 ≤16)", "ratio": r, "need": c["ink_max"], "ok": r <= c["ink_max"]})
+    out.append({"pair": "bg", "what": "배경 채도(LCh C ≤8)", "ratio": C_bg, "need": c["bg_chroma_max"], "ok": C_bg <= c["bg_chroma_max"]})
+    out.append({"pair": "bg", "what": f"배경 밝기 L {lo}~{hi}", "ratio": L_bg, "need": lo, "ok": lo <= L_bg <= hi})
+    Cb = lch(p["brand"])[1]
+    out.append({"pair": "brand", "what": "마무리 전면 배경 채도(≤50)", "ratio": Cb, "need": c["brand_chroma_max"], "ok": Cb <= c["brand_chroma_max"]})
+    Lm, Cm, Hm = lch(p["mark"])
+    out.append({"pair": "mark", "what": "형광펜 채도(≤30)", "ratio": Cm, "need": c["mark_chroma_max"], "ok": Cm <= c["mark_chroma_max"]})
+    de = delta_e(p["mark"], p["bg"])
+    out.append({"pair": "mark/bg", "what": "형광펜이 배경과 구분(ΔE ≥8)", "ratio": de, "need": c["mark_visible_de"], "ok": de >= c["mark_visible_de"]})
+    ylo, yhi = c["yellow_hue"]
+    is_yellow = Cm >= 15 and ylo <= Hm <= yhi
+    out.append({"pair": "mark", "what": "형광펜 노랑 계열 아님", "ratio": Hm, "need": ylo, "ok": not is_yellow})
     for fg, bg, need, what in CHECKS:
         if not need:
             continue

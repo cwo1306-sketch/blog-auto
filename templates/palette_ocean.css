@@ -1,4 +1,4 @@
-/* 자동 생성: naver_cardnews/palette.py — 오션 블루 + 살구 (추천) */
+/* 자동 생성: naver_cardnews/palette.py — 오션 */
 :root {
   --bg: #F6F5F1;   /* 배경(종이) */
   --bg-2: #EAE8E2;   /* 보조 배경(카드·사진 틀) */
@@ -11,5 +11,5 @@
   --deep: #0E2C3C;   /* 숫자·비교 카드 배경 */
   --on-deep: #F6F5F1;   /* 어두운 배경 위 글씨 */
   --pop: #8ED3F2;   /* 어두운 배경 위 큰 숫자 */
-  --mark: #FFD9A8;   /* 형광펜(강조 줄 배경) */
+  --mark: #F8D3C6;   /* 형광펜(강조 줄 배경) */
 }

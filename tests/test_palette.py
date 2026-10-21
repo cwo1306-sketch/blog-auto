@@ -38,3 +38,26 @@ def test_generated_palette_files(tmp_path):
     assert len(paths) == len(palette.PALETTES)
     txt = (tmp_path / "palette_coral.css").read_text(encoding="utf-8")
     assert "--line: #D9482A;" in txt and "--brand: #FF6A45;" in txt
+
+
+def test_rotation_palettes_all_pass_comfort_and_contrast():
+    assert len(palette.ROTATION) >= 5
+    for name in palette.ROTATION:
+        bad = [r["what"] for r in palette.audit(name) if not r["ok"]]
+        assert not bad, (name, bad)
+
+
+def test_no_yellow_highlight_in_rotation():
+    for name in palette.ROTATION:
+        _, c, h = palette.lch(palette.PALETTES[name]["mark"])
+        assert not (c >= 15 and 80 <= h <= 105), name
+
+
+def test_pick_rotation_cycles_and_override():
+    seq = [palette.pick_rotation(i) for i in range(len(palette.ROTATION) * 2)]
+    assert seq[:len(palette.ROTATION)] == palette.ROTATION
+    assert all(a != b for a, b in zip(seq, seq[1:]))
+    assert palette.pick_rotation(3, "clay") == "clay"
+    import pytest
+    with pytest.raises(ValueError):
+        palette.pick_rotation(0, "nope")

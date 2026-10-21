@@ -14,7 +14,7 @@
   --deep: #0E2C3C;   /* 숫자·비교 카드 배경 */
   --on-deep: #F6F5F1;   /* 어두운 배경 위 글씨 */
   --pop: #8ED3F2;   /* 어두운 배경 위 큰 숫자 */
-  --mark: #FFD9A8;   /* 형광펜(강조 줄 배경) */
+  --mark: #F8D3C6;   /* 형광펜(강조 줄 배경) */
   --font: "Pretendard", "Pretendard Variable", "Noto Sans CJK KR", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
   /* v2.2 혼합: 표지 헤드라인·마무리 요약만 배달의민족 주아체 (로컬 설치명 → 구글 폰트 Jua → Pretendard 순으로 폴백) */
   --display: "BM JUA_OTF", "BM JUA_TTF", "BMJUA", "배달의민족 주아", "Jua", var(--font);
@@ -39,9 +39,8 @@ body.notext .text, body.notext .pill, body.notext .source, body.notext .page, bo
 .photo { position: absolute; left: var(--m); right: var(--m); border-radius: 28px; overflow: hidden; background: var(--bg-2);
          box-shadow: 0 0 0 2px var(--ink); }
 .photo .bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: saturate(.8) contrast(.98) brightness(1.06); }
-.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(248,246,241,.0) 55%, rgba(248,246,241,.35) 100%),
-                rgba(255, 210, 120, .08); mix-blend-mode: multiply; }
-.photo { box-shadow: 0 0 0 1.5px rgba(42,41,38,.5); }
+.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 35%, transparent) 100%); }
+.photo { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ink) 45%, transparent); }
 .shade, .diag { display: none; }           /* 구 템플릿 요소 무력화 */
 
 /* 형광펜 강조 (writer highlight=true) */
@@ -157,4 +156,4 @@ body.outro .summary { font-size: 64px; line-height: 1.24; }
 body.cover mark, body.outro mark { border-radius: .18em; padding: 0 .12em; }
 
 /* 마무리 장(퍼스널 컬러 배경) 위의 강조는 형광펜 대신 굵은 밑줄 */
-body.outro mark { background: none; color: inherit; box-shadow: inset 0 -.18em 0 rgba(255,255,255,.35); }
+body.outro mark { background: none; color: inherit; box-shadow: inset 0 -.18em 0 color-mix(in srgb, var(--on-brand) 35%, transparent); }

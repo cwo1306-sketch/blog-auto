@@ -27,6 +27,7 @@ import pexels
 import render
 
 import keys
+from naver_cardnews import palette
 from naver_cardnews.db import Database
 from naver_cardnews.imagehash import dhash, to_hex
 from naver_cardnews.stat_card import Stat, StatError, validate_stat
@@ -178,9 +179,12 @@ def main(url: str, db_path: str, force: bool = False) -> str:
             images.append(name); image_log.append({"slide": n, **log})
 
         source = f"출처: {article['press']} · {article['date'].replace('-', '.')}"
-        files, qa = render.render(render.build_pages(script, images, source), out)
+        made = db.conn.execute("SELECT COUNT(*) FROM articles WHERE status IN ('제작완료','게시완료')").fetchone()[0]
+        pal = palette.pick_rotation(made, os.environ.get("CARDNEWS_PALETTE", ""))
+        files, qa = render.render(render.build_pages(script, images, source, palette=pal), out)
 
         meta = {
+            "palette": pal,
             "article": {k: article[k] for k in ("id", "url", "title", "press", "date")},
             "script": script, "images": image_log, "cards": files,
             "qa": {"script_errors": errors, "notes": notes, "render": qa,

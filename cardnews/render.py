@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 from html import escape
@@ -29,15 +30,15 @@ MIN_CONTRAST = 4.5               # WCAG 2.x AA 일반 텍스트 기준
 STAT_MAX_QUOTE = 70
 
 
-def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num: str = "") -> str:
+def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num: str = "", palette: str = "") -> str:
     """2026 템플릿: 사진은 풀블리드가 아니라 .photo 액자 안에, 본문 장은 큰 번호(.num-big)를 단다."""
     photo = f"""<div class="photo"><div class="bg" style="background-image:url('{bg}')"></div></div>""" if bg else ""
     num_big = f'<div class="num-big">{num}</div>' if num else ""
     plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
     theme = os.environ.get("CARDNEWS_THEME", "").strip()
     theme_css = f'<link rel="stylesheet" href="../../templates/theme_{theme}.css">' if theme else ""
-    palette = os.environ.get("CARDNEWS_PALETTE", "").strip()      # 기본 ocean 은 card.css 에 내장. 다른 팔레트 비교용
-    if palette:
+    palette = palette or os.environ.get("CARDNEWS_PALETTE", "").strip()   # 기본 ocean 은 card.css 에 내장
+    if palette and palette != "ocean":
         theme_css += f'<link rel="stylesheet" href="../../templates/palette_{palette}.css">'
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <link rel="stylesheet" href="../../templates/card.css">{theme_css}</head>
@@ -95,41 +96,43 @@ def _compare_inner(s: dict) -> str:
             f'<div class="cols">{col(cmp.get("left", {}), "left")}<div class="vs">vs</div>{col(cmp.get("right", {}), "right")}</div></div>')
 
 
-def build_pages(script: dict, images: list[str | None], source: str) -> list[str]:
-    """images[i]는 i번째 장(0=표지)의 배경 파일명. 사진 없는 장(stat/list/term/qa/compare)과 단색 강등 장은 None."""
+def build_pages(script: dict, images: list[str | None], source: str, palette: str = "") -> list[str]:
+    """images[i]는 i번째 장(0=표지)의 배경 파일명. 사진 없는 장(stat/list/term/qa/compare)과 단색 강등 장은 None.
+    palette: 돌려 쓰기 팔레트 이름(naver_cardnews.palette.ROTATION). 비우면 CARDNEWS_PALETTE → card.css 기본."""
+    page = functools.partial(_page, palette=palette)
     slides = script["slides"]
     total = 2 + len(slides)
     # 강조 줄은 형광펜(mark)으로. 글자색 노랑(구 템플릿)은 종이 배경에서 대비가 안 나와 쓰지 않는다
     lines = "".join(
         f'<div class="line">{"<mark>" + escape(l["text"]) + "</mark>" if l.get("highlight") else escape(l["text"])}</div>'
         for l in script["cover"]["lines"])
-    pages = [_page(f'<div class="text">{lines}<div class="handle">{HANDLE}</div></div>',
+    pages = [page(f'<div class="text">{lines}<div class="handle">{HANDLE}</div></div>',
                    images[0], "cover", source, f"1/{total}")]
     for i, s in enumerate(slides, start=2):
         kind = s.get("slide_type", "photo")
         num = f"{i - 1:02d}"
         if kind == "stat" and s.get("stat"):
-            pages.append(_page(_stat_inner(s["stat"]), None, "stat", source, f"{i}/{total}"))
+            pages.append(page(_stat_inner(s["stat"]), None, "stat", source, f"{i}/{total}"))
         elif kind == "list":
-            pages.append(_page(_list_inner(num, s), None, "list", source, f"{i}/{total}"))
+            pages.append(page(_list_inner(num, s), None, "list", source, f"{i}/{total}"))
         elif kind == "term":
-            pages.append(_page(_term_inner(s), None, "term", source, f"{i}/{total}"))
+            pages.append(page(_term_inner(s), None, "term", source, f"{i}/{total}"))
         elif kind == "qa":
-            pages.append(_page(_qa_inner(str(i - 1), s), None, "qa", source, f"{i}/{total}"))
+            pages.append(page(_qa_inner(str(i - 1), s), None, "qa", source, f"{i}/{total}"))
         elif kind == "compare" and s.get("compare"):
-            pages.append(_page(_compare_inner(s), None, "compare", source, f"{i}/{total}"))
+            pages.append(page(_compare_inner(s), None, "compare", source, f"{i}/{total}"))
         elif kind == "quote":
-            pages.append(_page(_quote_inner(s), None, "quote", source, f"{i}/{total}"))
+            pages.append(page(_quote_inner(s), None, "quote", source, f"{i}/{total}"))
         else:
             inner = f'<div class="text"><h2>{escape(s["title"])}</h2><p>{escape(s["body"])}</p></div>'
-            pages.append(_page(inner, images[i - 1], "slide", source, f"{i}/{total}", num=num))
+            pages.append(page(inner, images[i - 1], "slide", source, f"{i}/{total}", num=num))
     o = script["outro"]
     inner = (f'<div class="text"><div class="kicker">오늘의 핵심</div>'
              f'<div class="summary">{escape(o["summary"])}</div>'
              f'<div class="question">Q. {escape(o["question"])}</div>'
              f'<div class="cta"><span>저장</span><span>공유</span><span>팔로우</span></div>'
              f'<div class="handle">{HANDLE}</div></div>')
-    pages.append(_page(inner, None, "outro", source, f"{total}/{total}"))   # 마무리는 형광 블록, 사진 없음
+    pages.append(page(inner, None, "outro", source, f"{total}/{total}"))   # 마무리는 형광 블록, 사진 없음
     return pages
 
 
