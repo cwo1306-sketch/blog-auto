@@ -100,7 +100,7 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
                              "photographer": c.photographer, "url": c.page_url, "alt": c.alt}
             return name, log
         # 재검색: 1차 질의는 이미 봤으므로 더 추상적인 질의로 바꾼다 (실측: 같은 질의 재검색은 같은 후보 8장을 다시 심사했다)
-        queries = ["abstract dark minimal light texture", "bokeh lights dark background", queries[0]]
+        queries = ["abstract dark minimal light texture", "bokeh lights dark background", *queries[:1]]
     log["fallback"] = "plain"
     return None, log
 
@@ -171,8 +171,9 @@ def main(url: str, db_path: str, force: bool = False) -> str:
                                 cover.get("image_concept", ""), out)
         images.append(name); image_log.append({"slide": 1, **log})
         for n, s in enumerate(script["slides"], start=2):
-            if s.get("slide_type") == "stat":
-                images.append(None); image_log.append({"slide": n, "stat": True})
+            kind = s.get("slide_type", "photo")
+            if kind != "photo":     # stat/list/term/qa/compare/quote 장은 사진 없이 렌더된다
+                images.append(None); image_log.append({"slide": n, "no_photo": kind})
                 continue
             name, log = _pick_image(db, scorer, aid, n, _queries(s), s["title"],
                                     s.get("image_concept", s["body"][:80]), out)
