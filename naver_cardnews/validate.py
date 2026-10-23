@@ -234,6 +234,14 @@ def check(script: dict, article_body: str) -> list[str]:
             errors += check_queries(f"{i}장", s)
         prev_stat = is_stat   # chart 는 종이 바탕이라 stat 연속 규칙에서 뺀다
 
+    # 차트에 나온 값을 stat 장이 반복하지 않는다 (같은 숫자를 두 번 보여 주지 않기)
+    chart_vals = {(_norm(str(v)), _norm(c.get("unit", ""))) for s in script["slides"] if s.get("slide_type") == "chart"
+                  for c in [s.get("chart") or {}] for v in c.get("values") or []}
+    for i, s in enumerate(script["slides"], start=2):
+        st = s.get("stat") or {}
+        if s.get("slide_type") == "stat" and (_norm(str(st.get("value", ""))), _norm(st.get("unit", ""))) in chart_vals:
+            errors.append(f"{i}장 stat: 차트에 이미 나온 값 '{st.get('value')}{st.get('unit')}' 반복")
+
     lo, hi = LIMITS["summary"]
     if not lo <= len(script["outro"]["summary"]) <= hi:
         errors.append(f"마무리 요약 {len(script['outro']['summary'])}자 (허용 {lo}~{hi}자)")

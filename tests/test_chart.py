@@ -110,3 +110,14 @@ def test_render_chart(tmp_path):
     assert qa[1]["kind"] == "chart" and not qa[1]["issues"]
     html = (out / "card_02.html").read_text(encoding="utf-8")
     assert json.dumps("3년 새 3.6배", ensure_ascii=False).strip('"') in html
+
+
+def test_stat_must_not_repeat_chart_value():
+    s = {"format": "numbers", "cover": {"lines": [{"text": "표지", "highlight": True}]},
+         "slides": [{"slide_type": "stat", "title": "t", "body": "",
+                     "stat": {"value": "10", "unit": "조 원", "label": "l", "source_quote": BAR["source_quote"]}},
+                    {"slide_type": "chart", "title": "3년 새 3.6배", "body": "", "chart": BAR}],
+         "outro": {"summary": "요약 문장은 스무 자를 넘겨야 합니다 꼭요", "question": "q?"}, "caption": "c\n출처: t", "hashtags": ["#a"] * 8}
+    assert any("차트에 이미 나온 값" in e for e in validate.check(s, BODY))
+    s["slides"][0]["stat"]["value"] = "100"
+    assert not any("차트에 이미 나온 값" in e for e in validate.check(s, BODY))
