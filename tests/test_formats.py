@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cardnews"))
 
 from naver_cardnews import sheet, validate, writer  # noqa: E402
-from naver_cardnews.formats import FORMATS, format_rules  # noqa: E402
+from naver_cardnews.formats import FORMATS, SLIDE_TYPES, format_rules  # noqa: E402
 from samples import SAMPLES  # noqa: E402
 
 from samples import QUOTE  # noqa: E402
@@ -21,7 +21,7 @@ def test_all_sample_formats_pass_validation():
         # 샘플은 구조 확인용이라 원문 대조(수치·근거)는 제외한다
         errs = [e for e in validate.check(s, BODY) if "원문에 없는 수치" not in e and "단위가 원문" not in e and "근거" not in e]
         assert errs == [], (fmt, errs)
-        assert s["format"] == fmt and all(sl["slide_type"] in ("photo", "stat", "list", "term", "qa", "compare", "quote") for sl in s["slides"])
+        assert s["format"] == fmt and all(sl["slide_type"] in SLIDE_TYPES for sl in s["slides"])
         assert len(s["slides"]) == FORMATS[fmt]["body_slides"]
 
 

@@ -24,6 +24,12 @@ def _stat(title, value, unit, label, quote, body=""):
     return _s("stat", title, body, stat={"value": value, "unit": unit, "label": label, "source_quote": quote})
 
 
+def _chart(title, ctype, unit, labels, values, quote, body="", highlight=None):
+    s = _s("chart", title, body)
+    s["chart"] = {"type": ctype, "unit": unit, "labels": labels, "values": values, "highlight": highlight, "source_quote": quote}
+    return s
+
+
 OUTRO = {"summary": "카카오가 AI의 눈 2종을 상업 이용까지 가능하게 공개했어요", "question": "AI의 눈, 어디에 가장 쓰이면 좋을까요?"}
 TAIL = {"outro": OUTRO, "caption": "…\n출처: 조선비즈", "hashtags": ["#AI뉴스", "#AI", "#테크뉴스", "#카카오", "#비전인코더", "#오픈소스", "#멀티모달", "#온디바이스AI"]}
 QUOTE = "작은 모델이 큰 모델을 이기는 일은 흔치 않다. 한국어 문서에서는 격차가 더 벌어진다"
@@ -75,7 +81,8 @@ SAMPLES = {
     ], **TAIL},
     "numbers": {"format": "numbers", "cover": _cover(["숫자로 보는", "*카카오 AI의 눈", "4억·9800만·42"]), "slides": [
         _stat("큰 모델의 크기", "4억2600만", "파라미터", "미디엄 모델 크기", "4억2600만 파라미터의 미디엄"),
-        _stat("작은 모델의 크기", "9800만", "파라미터", "티니 모델 크기", "9800만 파라미터의 티니"),
+        _chart("9개 영역, 42개 시험", "compare", "개", ["평가 영역", "벤치마크"], ["9", "42"], "9개 영역, 총 42개 벤치마크",
+               "카카오는 9개 영역에 걸친 42개 벤치마크로 성능을 쟀다고 밝혔어요."),
         _stat("시험 개수", "42", "개", "성능 평가 벤치마크", "총 42개 벤치마크에서"),
         _stat("시험 영역", "9", "개 영역", "평가 영역 수", "9개 영역, 총 42개 벤치마크"),
         _s("photo", "숫자가 말하는 것", "작은 모델도 한국어 문서처럼 특정 영역을 집중 학습하면 큰 모델을 앞설 수 있다는 게 이번 숫자들의 공통 메시지예요. 다만 평가는 카카오 자체 기준이에요.", concept="결론"),

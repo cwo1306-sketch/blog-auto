@@ -42,12 +42,16 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
   · photo 장: title(공백 포함 14자 이내), body(공백 포함 90~120자). 사진 지시 필요.
   · stat 장: 핵심이 숫자 하나일 때. stat = {value: 숫자만(쉼표 허용, 소수점 둘째 자리까지), unit: 원문 단위, label: 14자 이내 설명,
     source_quote: 그 수치가 든 원문 문장을 토씨 하나 바꾸지 말고 그대로 복사}. title·body도 채운다. explainer에서는 최대 2장, 연속 금지, 2장은 photo.
+  · chart 장: 같은 단위의 수치가 2개 이상 나란히 있을 때(연도별 추세, 회사별 비교, 전후, 비중). chart = {type: bar(항목 비교·연도 2~6개)|
+    line(시점 3개 이상 추세)|donut(합이 100%인 비중 2~5개)|compare(전후·두 대상 2개), unit: 원문 단위, labels: 항목 이름(각 8자 이내),
+    values: 숫자만(원문 표기 그대로, 환산·반올림 금지 — 원문이 '2조 8000억 원'이면 chart 대신 stat), highlight: 강조할 값의 위치(0부터, 보통 가장 최근·가장 큰 값),
+    source_quote: 모든 값이 든 원문 문장 그대로(여러 문장이면 ' / ' 로 이음)}. title은 그래프가 말하는 결론(14자, 예 '3년 새 3.6배'), body는 해석 0~125자. 최대 1장, 사진 없음.
   · list 장: title(14자, 명사형) + body(60~110자). 번호는 코드가 붙인다. 사진 없음.
   · term 장: title=용어(10자) + label=한 줄 정의(30자) + body=비유 설명(60~110자). 사진 없음.
   · qa 장: title=질문(30자, 물음표로 끝) + body=답(60~120자, 결론 먼저). 사진 없음.
   · compare 장: title=비교 축(14자) + compare={left:{label(8자), points[2~3, 각 22자]}, right:{label, points}}. 사진 없음.
   · quote 장: 기사에 실제로 있는 발언만. title=발언 요지(14자), body=인용문 그대로(따옴표 없이, 40~110자), label='이름 소속/직함'(20자). 사진 없음.
-  · 사진 없는 장(list/term/qa/compare)은 image_queries를 빈 배열로, image_concept은 빈 문자열로 둔다.
+  · 사진 없는 장(stat/chart/list/term/qa/compare/quote)은 image_queries를 빈 배열로, image_concept은 빈 문자열로 둔다.
 - 근거(evidence): 본문 모든 장에 evidence 배열을 단다. 그 장의 내용이 기대는 원문 문장을 1~2개, 토씨 하나 바꾸지 말고 그대로 복사한다
   (문장의 일부만 옮겨도 되지만 20자 이상). 장에 나오는 모든 수치는 그 장의 evidence 안에 있어야 한다. evidence 로 뒷받침할 수 없는
   사실·발언·주체는 쓰지 않는다. 비유·질문처럼 사실을 주장하지 않는 문장은 evidence 가 필요 없다.
@@ -65,10 +69,11 @@ AI·테크 뉴스를 쉬운 말로 풀어 준다. 기사 원문을 읽고 1080x1
 JSON만 출력한다. 스키마:
 {"format":"debate"|"glossary"|"scene"|"reveal"|"qa"|"numbers"|"explainer",
  "cover":{"lines":[{"text":str,"highlight":bool}],"image_queries":[str,str],"image_concept":str},
- "slides":[{"slide_type":"photo"|"stat"|"list"|"term"|"qa"|"compare"|"quote","title":str,"body":str,"label":str,
+ "slides":[{"slide_type":"photo"|"stat"|"chart"|"list"|"term"|"qa"|"compare"|"quote","title":str,"body":str,"label":str,
             "image_queries":[str,str],"image_concept":str,
             "evidence":[str],
             "stat":{"value":str,"unit":str,"label":str,"source_quote":str} | null,
+            "chart":{"type":"bar"|"line"|"donut"|"compare","unit":str,"labels":[str],"values":[str],"highlight":int,"source_quote":str} | null,
             "compare":{"left":{"label":str,"points":[str]},"right":{"label":str,"points":[str]}} | null}],
  "outro":{"summary":str,"question":str},
  "caption":str,"hashtags":[str]}
@@ -154,13 +159,17 @@ def normalize_script(script: dict) -> dict:
             kind = "photo"
         if kind == "compare" and not s.get("compare"):
             kind = "photo"
-        if kind not in ("photo", "stat", "list", "term", "qa", "compare", "quote"):
+        if kind == "chart" and not s.get("chart"):
+            kind = "photo"
+        if kind not in ("photo", "stat", "chart", "list", "term", "qa", "compare", "quote"):
             kind = "photo"
         s["slide_type"] = kind
         if kind != "stat":
             s["stat"] = None
         if kind != "compare":
             s["compare"] = None
+        if kind != "chart":
+            s["chart"] = None
         s.setdefault("title", ""); s.setdefault("body", ""); s.setdefault("label", "")
         ev = s.get("evidence") or []
         s["evidence"] = [str(x).strip() for x in (ev if isinstance(ev, list) else [ev]) if str(x).strip()][:3]

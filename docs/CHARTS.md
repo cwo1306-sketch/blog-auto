@@ -34,3 +34,20 @@
 - 브라우저 없이 그려야 하는 곳(엑셀 미리보기 등)은 Vega-Lite + vl-convert 로 같은 데이터를 그린다.
 
 규칙(데이터 시각화 기본): 막대는 0 에서 시작, 강조색은 한 곳만(가장 중요한 값), 축 눈금 대신 값 라벨, 장당 차트 1개, 출처 필수.
+
+## 도입 (2026-10-23): Apache ECharts 6.1.0
+
+- **장 유형 `chart`**: `chart = {type: bar|line|donut|compare, unit, labels, values, highlight, source_quote}`.
+  bar = 항목·연도 2~6개, line = 시점 3~8개 추세, donut = 합 100% 비중 2~5개, compare = 전후·두 대상 2개.
+- **어디에 들어가나**: numbers 포맷 ③장(같은 단위 값이 2개 이상 나란히 있으면 chart, 아니면 stat), explainer 맥락 장(photo|stat|chart).
+  한 세트에 최대 1장. 차트는 종이 바탕이라 stat 장과 이어져도 된다(stat 연속 금지 규칙에서 제외).
+- **검수**(`naver_cardnews/chart.py` `validate_chart`): 값은 원문 표기 그대로(환산·반올림 금지), 각 값+단위가 source_quote 안에 숫자 경계까지
+  맞게 있어야 하고('10' 이 '100' 에서 잡히지 않음), source_quote(여러 문장은 ' / ')는 원문에 그대로 있어야 한다. 라벨 8자 이내,
+  막대·도넛·비교는 음수 금지, 도넛은 % 이고 합 95~105%. 실패하면 제작 때 photo 장으로 강등(`make_card` 노트에 사유).
+- **그리기**: 카드 HTML 안에서 ECharts(SVG 렌더러, 애니메이션 끔)가 CSS 토큰 색을 읽어 그린다 → 팔레트·레이아웃·다크 모드 자동 대응.
+  강조 = `--brand`(한 곳), 나머지 = 잉크 16% 섞은 회색, 값 라벨 = `--ink`, 축 라벨 = `--ink-2`, 막대는 0부터, 선은 최솟값 아래 여유.
+  렌더러는 `window.__chartDone` 신호를 기다린 뒤 캡처한다.
+- **엑셀**: 유형 `chart:bar`, 수치 `2.8 ; *6.2 ; 10`(강조 값 앞 `*`), 라벨 `2021 ; 2022 ; 2023`, 단위, 인용=source_quote.
+- **파일**: `templates/vendor/echarts.min.js` (Apache-2.0, `ECHARTS_LICENSE`·`ECHARTS_NOTICE` 동봉).
+- **원고 다시 쓰기**: `make_card.py URL --format numbers --rewrite` 로 기존 원고를 차트가 들어갈 수 있는 새 원고로 바꿀 수 있다.
+- 시연: `cardnews/output/chart4_compare.jpg`(4종 × ocean/frame, slate/card, plum/band), 실제 제작 `cardnews/output/card_092_0002441791_sheet.jpg`.

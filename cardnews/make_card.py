@@ -29,6 +29,7 @@ import render
 import keys
 from naver_cardnews import compose as composer
 from naver_cardnews import palette
+from naver_cardnews.chart import Chart, ChartError, validate_chart
 from naver_cardnews.db import Database
 from naver_cardnews.imagehash import dhash, to_hex
 from naver_cardnews.stat_card import Stat, StatError, validate_stat
@@ -39,6 +40,7 @@ from naver_cardnews.vision_pick import HaikuScorer, pick
 ROOT = os.path.dirname(os.path.abspath(__file__))
 MAX_REWRITES = 2
 MAX_STAT_SLIDES = 2
+MAX_CHART_SLIDES = 1
 
 
 def _queries(item: dict) -> list[str]:
@@ -47,10 +49,27 @@ def _queries(item: dict) -> list[str]:
 
 
 def _normalize_slide_types(script: dict, body: str, log: list[str]) -> None:
-    """stat 장은 검증을 통과해야 하고 최대 2장, 연속 금지. 아니면 photo로 강등."""
+    """stat 장은 검증을 통과해야 하고 최대 2장, 연속 금지. chart 장은 검증 통과·최대 1장(stat 과 이어져도 된다).
+    아니면 photo로 강등."""
     prev_stat = False
     count = 0
+    charts = 0
     for s in script["slides"]:
+        if s.get("slide_type") == "chart":
+            reason = None
+            try:
+                validate_chart(Chart.from_dict(s.get("chart") or {}), article_text=body)
+            except ChartError as exc:
+                reason = str(exc)
+            if reason is None and charts >= MAX_CHART_SLIDES:
+                reason = f"chart {MAX_CHART_SLIDES}장 초과"
+            if reason:
+                log.append(f"slide {s.get('title', '')!r}: chart → photo 강등 ({reason})")
+                s["slide_type"] = "photo"
+            else:
+                charts += 1
+            prev_stat = False   # 차트는 종이 바탕이라 어두운 stat 장과 이어져도 리듬이 깨지지 않는다
+            continue
         if s.get("slide_type") != "stat":
             prev_stat = False
             continue
@@ -110,12 +129,14 @@ def _compose(db: Database, article: dict, draft, script: dict | None, overrides:
     """색 → 레이아웃 → 포맷. 명령줄·환경변수로 하나를 고정할 수 있다(--palette/--layout/--format,
     CARDNEWS_PALETTE/CARDNEWS_LAYOUT). 엑셀에서 고친 원고는 포맷을 바꾸지 않는다."""
     recent = [dict(r) for r in db.recent_compositions()]
-    locked = overrides.get("format") or (script.get("format") if draft is not None and draft["source"] == "excel" else None)
-    draft_fmt = script.get("format") if script is not None else None
+    excel_fmt = script.get("format") if draft is not None and draft["source"] == "excel" else None
+    locked = overrides.get("format") or excel_fmt
+    why = "명령줄 지정" if overrides.get("format") else "엑셀 수정 원고"
+    draft_fmt = script.get("format") if script is not None and not overrides.get("rewrite") else None
     pal_fixed = overrides.get("palette") or os.environ.get("CARDNEWS_PALETTE", "").strip()
     lay_fixed = overrides.get("layout") or os.environ.get("CARDNEWS_LAYOUT", "").strip()
     return composer.compose(article["body"], recent, locked_format=locked, draft_format=draft_fmt,
-                            seed=overrides.get("seed"),
+                            seed=overrides.get("seed"), locked_why=why,
                             palettes=[palette.pick_rotation(0, pal_fixed)] if pal_fixed else None,
                             layouts=[lay_fixed] if lay_fixed else None)
 
@@ -145,7 +166,7 @@ def main(url: str, db_path: str, force: bool = False, overrides: dict | None = N
     script = json.loads(draft["script_json"]) if draft is not None else None
     comp = _compose(db, article, draft, script, overrides or {})
     notes.append("구성: " + " / ".join(comp.reasons))
-    if script is not None and script.get("format") == comp.format:
+    if script is not None and script.get("format") == comp.format and not (overrides or {}).get("rewrite"):
         errors = validate.check(script, article["body"])
         notes.append(f"원고: drafts v{draft['version']} ({draft['source']})")
     else:
@@ -234,5 +255,9 @@ if __name__ == "__main__":
     ap.add_argument("--layout", help="레이아웃 고정: " + ", ".join(composer.LAYOUTS))
     ap.add_argument("--format", help="포맷 고정 (원고를 그 포맷으로 다시 씀)")
     ap.add_argument("--seed", type=int, help="무작위 재현용")
+    ap.add_argument("--rewrite", action="store_true", help="기존 원고가 있어도 고른 포맷으로 새로 쓴다(엑셀 수정 원고 포함)")
     a = ap.parse_args()
-    main(a.url, a.db, a.force, {k: getattr(a, k) for k in ("palette", "layout", "format", "seed") if getattr(a, k) is not None})
+    opts = {k: getattr(a, k) for k in ("palette", "layout", "format", "seed") if getattr(a, k) is not None}
+    if a.rewrite:
+        opts["rewrite"] = True
+    main(a.url, a.db, a.force, opts)

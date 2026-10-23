@@ -19,6 +19,7 @@ from html import escape
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
+from naver_cardnews.chart import ECHARTS_SRC, Chart, draw_script
 from naver_cardnews.stat_card import len_class
 
 HANDLE = os.environ.get("CARDNEWS_HANDLE", "@your_handle")
@@ -35,7 +36,7 @@ def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num:
     """2026 템플릿: 사진은 풀블리드가 아니라 .photo 액자 안에, 본문 장은 큰 번호(.num-big)를 단다."""
     photo = f"""<div class="photo"><div class="bg" style="background-image:url('{bg}')"></div></div>""" if bg else ""
     num_big = f'<div class="num-big">{num}</div>' if num else ""
-    plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
+    plain = "" if (bg or kind in ("stat", "chart", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
     theme = os.environ.get("CARDNEWS_THEME", "").strip()
     theme_css = f'<link rel="stylesheet" href="../../templates/theme_{theme}.css">' if theme else ""
     layout = layout or os.environ.get("CARDNEWS_LAYOUT", "").strip()       # 기본 frame 은 card.css 그대로
@@ -64,6 +65,15 @@ def _stat_inner(stat: dict) -> str:
             f'<span class="num">{escape(value)}<span class="{unit_cls}">{escape(unit)}</span></span></div>'
             f'<div class="stat-label">{escape(stat.get("label", ""))}</div></div>'
             f'<div class="quote">{escape(quote)}</div>')
+
+
+def _chart_inner(s: dict) -> str:
+    """그래프 장: 제목(결론) + 단위 + ECharts 영역 + 해석 한 줄. 그리기는 카드 안 스크립트가 CSS 토큰 색으로 한다."""
+    ch = Chart.from_dict(s["chart"])
+    body = f'<p class="chart-note">{escape(s["body"])}</p>' if s.get("body") else ""
+    return (f'<div class="text"><h2>{escape(s.get("title", ""))}</h2><div class="chart-unit">단위: {escape(ch.unit)}</div></div>'
+            f'<div id="chart"></div>{body}'
+            f'<script src="{ECHARTS_SRC}"></script><script>{draw_script(ch)}</script>')
 
 
 def _list_inner(num: str, s: dict) -> str:
@@ -118,6 +128,8 @@ def build_pages(script: dict, images: list[str | None], source: str, palette: st
         num = f"{i - 1:02d}"
         if kind == "stat" and s.get("stat"):
             pages.append(page(_stat_inner(s["stat"]), None, "stat", source, f"{i}/{total}"))
+        elif kind == "chart" and s.get("chart"):
+            pages.append(page(_chart_inner(s), None, "chart", source, f"{i}/{total}"))
         elif kind == "list":
             pages.append(page(_list_inner(num, s), None, "list", source, f"{i}/{total}"))
         elif kind == "term":
@@ -194,7 +206,7 @@ def _contrast_dark_text(bg_png: str, text_lum: float) -> float:
 
 
 def _kind(doc: str) -> str:
-    for k in ("cover", "stat", "outro", "list", "term", "qa", "compare", "quote", "slide"):
+    for k in ("cover", "stat", "chart", "outro", "list", "term", "qa", "compare", "quote", "slide"):
         if f'<body class="{k}' in doc:
             return k
     return "slide"
@@ -218,6 +230,8 @@ def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
             page.wait_for_timeout(150)
             if kind == "stat":
                 page.evaluate(SHRINK_JS)
+            if kind == "chart":
+                page.wait_for_function("window.__chartDone === true", timeout=10000)
             jpg = os.path.join(out_dir, f"card_{n:02d}.jpg")
             page.screenshot(path=jpg, type="jpeg", quality=92)
             files.append(jpg)
@@ -225,7 +239,7 @@ def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
             box = page.evaluate(LAYOUT_JS)
             issues = []
             contrast = None
-            if kind not in ("stat", "list", "term", "qa", "compare", "quote"):   # 단색 배경 장은 대비 측정 생략
+            if kind not in ("stat", "chart", "list", "term", "qa", "compare", "quote"):   # 단색 배경 장은 대비 측정 생략
                 page.evaluate("document.body.classList.add('notext')")
                 bg_png = os.path.join(out_dir, f".bg_text_{n:02d}.png")
                 page.screenshot(path=bg_png, clip={"x": box["x"], "y": box["y"],

@@ -30,7 +30,7 @@ IT/과학(105)·생활(103)·경제(101) 섹션에 섞여 있다.
 | `numbers` | 수치 브리핑형 | 5 | stat × 4 → 결론(photo) | 수치 3개 이상 |
 | `explainer` | 설명형(기본) | 4 | 무슨 일 → 왜 중요 → 맥락(stat 가능) → 전망 | 그 외 |
 
-장 유형: photo · stat · list · term · qa · compare · **quote**(신규: 발언 요지 + 인용문 + 발언자). quote 본문은 **원문에 그대로 있어야** 검수를 통과한다.
+장 유형: photo · stat · **chart**(ECharts 그래프, docs/CHARTS.md) · list · term · qa · compare · **quote**(발언 요지 + 인용문 + 발언자). quote 본문은 **원문에 그대로 있어야** 검수를 통과한다.
 
 ### 선택 규칙 (`format: auto`)
 찬반·권고 → debate · 낯선 용어 3개+ → glossary · 구체 현장 → scene · 통념과 다른 결론 → reveal · 독자 영향 질문 → qa · 수치 3개+ → numbers · 그 외 → explainer.

@@ -3,12 +3,13 @@
 분석 대상(2026-10-21): ZDNet코리아 [카드뉴스] AMEET 시리즈 6건(8장), 연합뉴스 '우리말 구조대'(10장), 이데일리 K-스마트팜(8장),
 스브스뉴스 추리 서사(논문). 공통: 8~10장, 질문형 표지, 비유, 수치 부제, 전문가 인용/비율, 마지막에 행동 제안.
 
-장 수는 표지 1 + 본문 N(4~6) + 마무리 1. slide_type 는 photo / stat / list / term / qa / compare / quote.
+장 수는 표지 1 + 본문 N(4~6) + 마무리 1. slide_type 는 photo / stat / chart / list / term / qa / compare / quote.
+chart 는 Apache ECharts 로 그리는 그래프 장(naver_cardnews/chart.py, docs/CHARTS.md).
 """
 
 from __future__ import annotations
 
-SLIDE_TYPES = ("photo", "stat", "list", "term", "qa", "compare", "quote")
+SLIDE_TYPES = ("photo", "stat", "chart", "list", "term", "qa", "compare", "quote")
 MAX_BODY_SLIDES = 6
 
 FORMATS: dict[str, dict] = {
@@ -77,9 +78,9 @@ FORMATS: dict[str, dict] = {
         "ref": "ZDNet 수치 부제 + 이데일리 수치 카드",
         "when": "원문 수치 3개 이상이 메시지일 때(실적, 시장 규모, 점유율)",
         "body_slides": 5,
-        "slides": ["stat", "stat", "stat", "stat", "photo"],
+        "slides": ["stat", "chart|stat", "stat", "stat", "photo"],
         "rules": (
-            "본문 5장: ②~⑤ stat(각 label 14자, title은 그 숫자의 의미 14자, body는 해석 60~110자, 수치·단위 원문 그대로, source_quote 원문 문장 복사) "
+            "본문은 정확히 5장(② ③ ④ ⑤ ⑥). ③ 한 장만 chart 또는 stat 중 고른다: 같은 단위의 값이 2개 이상 나란히 있으면(연도별·회사별·전후·비중) chart, 아니면 stat. chart 를 넣어도 장 수는 늘리지 않는다. ②④⑤ stat(각 label 14자, title은 그 숫자의 의미 14자, body는 해석 60~110자, 수치·단위 원문 그대로, source_quote 원문 문장 복사) "
             "⑥ 수치를 묶는 결론 photo. 표지 둘째 줄에 가장 큰 수치. stat 연속·개수 제한 없음."
         ),
     },
@@ -88,8 +89,8 @@ FORMATS: dict[str, dict] = {
         "ref": "일반 뉴스 설명형",
         "when": "위 어느 틀에도 맞지 않는 단일 사건",
         "body_slides": 4,
-        "slides": ["photo", "photo", "photo|stat", "photo"],
-        "rules": "본문 4장: 무슨 일 → 왜 중요 → 맥락·숫자(stat 가능) → 전망. photo title 14자, body 90~120자. stat 최대 2장, 연속 금지.",
+        "slides": ["photo", "photo", "photo|stat|chart", "photo"],
+        "rules": "본문 4장: 무슨 일 → 왜 중요 → 맥락·숫자(stat 또는 chart 가능) → 전망. photo title 14자, body 90~120자. stat 최대 2장, 연속 금지.",
     },
 }
 

@@ -24,7 +24,9 @@ def columns() -> list[str]:
 
 
 EDITABLE = set(COVER_COLS + TAIL_COLS + ["메모", "포맷"] + [slide_col(i, n) for i in range(2, 2 + SLIDES) for n in SLIDE_COLS])
-SEP = " ; "   # compare 포인트 구분자
+SEP = " ; "   # compare 포인트·chart 값 구분자
+# chart 장: 유형 'chart:bar' 처럼 차트 종류를 붙이고, 수치='2.8 ; 6.2 ; *10'(강조할 값 앞에 '*'), 라벨='2021 ; 2022 ; 2023',
+# 단위='조 원', 인용=source_quote
 
 
 def flatten(script: dict) -> dict[str, str]:
@@ -50,7 +52,15 @@ def flatten(script: dict) -> dict[str, str]:
         row[slide_col(i, "수치")] = str(st.get("value", "")) if st else ""
         row[slide_col(i, "단위")] = st.get("unit", "") if st else ""
         cmp = s.get("compare") or {}
-        if s.get("slide_type") == "compare" and cmp:
+        ch = s.get("chart") or {}
+        if s.get("slide_type") == "chart" and ch:
+            hl = ch.get("highlight")
+            row[slide_col(i, "유형")] = f"chart:{ch.get('type', 'bar')}"
+            row[slide_col(i, "수치")] = SEP.join(("*" if k == hl else "") + str(v) for k, v in enumerate(ch.get("values") or []))
+            row[slide_col(i, "단위")] = ch.get("unit", "")
+            row[slide_col(i, "라벨")] = SEP.join(ch.get("labels") or [])
+            row[slide_col(i, "인용")] = ch.get("source_quote", "")
+        elif s.get("slide_type") == "compare" and cmp:
             row[slide_col(i, "라벨")] = f"{cmp['left'].get('label', '')} | {cmp['right'].get('label', '')}"
             row[slide_col(i, "본문")] = SEP.join(cmp["left"].get("points", []))
             row[slide_col(i, "인용")] = SEP.join(cmp["right"].get("points", []))
@@ -89,6 +99,15 @@ def unflatten(row: dict) -> dict:
         if not kind and not g("제목") and not g("본문"):
             continue   # 비어 있는 장 (포맷 장 수가 6 미만)
         kind = kind or "photo"
+        chart = None
+        if kind.startswith("chart"):
+            ctype = kind.split(":", 1)[1].strip() if ":" in kind else "bar"
+            raw = [v.strip() for v in g("수치").split(";") if v.strip()]
+            hl = next((k for k, v in enumerate(raw) if v.startswith("*")), None)
+            chart = {"type": ctype or "bar", "unit": g("단위"), "values": [v.lstrip("*").strip() for v in raw],
+                     "labels": [x.strip() for x in g("라벨").split(";") if x.strip()], "highlight": hl,
+                     "source_quote": g("인용")}
+            kind = "chart" if raw else "photo"
         value = g("수치")
         stat = ({"value": value, "unit": g("단위"), "label": g("라벨"), "source_quote": g("인용")}
                 if kind == "stat" and value else None)
@@ -99,7 +118,7 @@ def unflatten(row: dict) -> dict:
             compare = {"left": {"label": labels[0], "points": [p.strip() for p in body.split(";") if p.strip()]},
                        "right": {"label": labels[1], "points": [p.strip() for p in g("인용").split(";") if p.strip()]}}
             body = ""
-        if kind not in ("photo", "stat", "list", "term", "qa", "compare", "quote"):
+        if kind not in ("photo", "stat", "chart", "list", "term", "qa", "compare", "quote"):
             kind = "photo"
         if kind == "stat" and not stat:
             kind = "photo"
@@ -107,7 +126,7 @@ def unflatten(row: dict) -> dict:
         evidence = [x.strip() for x in g("근거").splitlines() if x.strip()]
         slides.append({"slide_type": kind, "title": g("제목"), "body": body, "evidence": evidence,
                        "label": g("라벨") if kind in ("term", "quote") else "",
-                       "stat": stat, "compare": compare, "image_queries": qs, "image_query": qs[0] if qs else "",
+                       "stat": stat, "compare": compare, "chart": chart, "image_queries": qs, "image_query": qs[0] if qs else "",
                        "image_concept": g("개념")})
     tags = [t if t.startswith("#") else "#" + t for t in _s(row.get("해시태그")).replace(",", " ").split() if t.strip("#")]
     fmt = _s(row.get("포맷")) or "explainer"

@@ -83,7 +83,7 @@ def _choose(rng: random.Random, options: list[str], avoid: set[str], what: str, 
 
 
 def compose(body: str, recent: list[dict] | None = None, locked_format: str | None = None,
-            draft_format: str | None = None, seed: int | None = None,
+            draft_format: str | None = None, seed: int | None = None, locked_why: str = "엑셀 수정 원고",
             palettes: list[str] | None = None, layouts: list[str] | None = None) -> Composition:
     """색 → 레이아웃 → 포맷. recent 는 최근 구성(최신이 앞, dict 에 palette/layout/format).
 
@@ -103,7 +103,7 @@ def compose(body: str, recent: list[dict] | None = None, locked_format: str | No
     ok = eligible_formats(body)
     if locked_format:
         fmt_pool = [locked_format]
-        reasons.append(f"포맷 고정: {locked_format} (엑셀 수정 원고)")
+        reasons.append(f"포맷 고정: {locked_format} ({locked_why})")
     elif draft_format and draft_format in ok and draft_format != last.get("format"):
         fmt_pool = [draft_format]
         reasons.append(f"포맷 재사용: {draft_format} (기존 원고, {ok[draft_format]})")

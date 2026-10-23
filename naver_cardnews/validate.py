@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 from .formats import FORMATS, body_slide_count
+from .chart import Chart, ChartError, validate_chart
 from .stat_card import Stat, StatError, validate_stat
 
 LIMITS = {"cover_line": 12, "title": 14, "body": (80, 125), "summary": (20, 45), "question": 30,
@@ -22,6 +23,7 @@ LIMITS = {"cover_line": 12, "title": 14, "body": (80, 125), "summary": (20, 45),
 TYPE_LIMITS = {
     "photo":   {"title": 14, "body": (80, 125)},
     "stat":    {"title": 14, "body": (0, 125)},
+    "chart":   {"title": 14, "body": (0, 125)},
     "list":    {"title": 14, "body": (50, 115)},
     "term":    {"title": 10, "body": (50, 115), "label": 32},
     "qa":      {"title": 32, "body": (50, 125)},
@@ -30,7 +32,7 @@ TYPE_LIMITS = {
 }
 # 포맷별 photo 본문 길이 예외 (현장 사례형은 한 장 한 문장)
 FORMAT_PHOTO_BODY = {"scene": (25, 75), "reveal": (40, 110)}   # 반전형은 단서를 짧게 던진다
-NO_PHOTO_TYPES = {"list", "term", "qa", "compare", "stat"}
+NO_PHOTO_TYPES = {"list", "term", "qa", "compare", "stat", "chart"}
 NUM_UNIT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([가-힣%a-zA-Z]{0,3})")
 HANJA = re.compile(r"[一-鿿]")
 YEAR = re.compile(r"^(19|20)\d{2}$")
@@ -41,6 +43,7 @@ BANNED_QUERY_WORDS = {
     "brand", "flag", "text", "sign", "billboard", "celebrity", "politician", "president",
 }
 MAX_STAT = 2
+MAX_CHART = 1
 EVIDENCE_MIN = 20
 _QUOTES = re.compile(r"[\s'\"‘’“”`]")
 
@@ -58,6 +61,8 @@ def slide_evidence(s: dict) -> list[str]:
     ev = list(s.get("evidence") or [])
     if not ev and s.get("slide_type") == "stat" and s.get("stat"):
         ev = [s["stat"].get("source_quote", "")]        # stat 은 source_quote 가 곧 근거
+    if not ev and s.get("slide_type") == "chart" and s.get("chart"):
+        ev = s["chart"].get("source_quote", "").split(" / ")   # chart 도 source_quote 가 곧 근거
     if not ev and s.get("slide_type") == "quote" and s.get("body"):
         ev = [s["body"]]                                 # quote 는 인용문이 곧 근거
     return [e for e in ev if e]
@@ -162,7 +167,7 @@ def check(script: dict, article_body: str) -> list[str]:
         fmt = "explainer"
     if len(script["slides"]) != body_slide_count(fmt):
         errors.append(f"format '{fmt}'은 본문 {body_slide_count(fmt)}장인데 {len(script['slides'])}장")
-    stat_count, prev_stat = 0, False
+    stat_count, prev_stat, chart_count = 0, False, 0
     for i, s in enumerate(script["slides"], start=2):
         kind = s.get("slide_type", "photo")
         is_stat = kind == "stat" and bool(s.get("stat"))
@@ -217,9 +222,17 @@ def check(script: dict, article_body: str) -> list[str]:
                 stat_count += 1
                 if stat_count > MAX_STAT:
                     errors.append(f"{i}장: stat 장 {MAX_STAT}장 초과")
+        elif kind == "chart":
+            try:
+                validate_chart(Chart.from_dict(s.get("chart") or {}), article_text=article_body)
+            except ChartError as exc:
+                errors.append(f"{i}장 chart: {exc}")
+            chart_count += 1
+            if chart_count > MAX_CHART:
+                errors.append(f"{i}장: chart 장 {MAX_CHART}장 초과")
         elif kind == "photo":
             errors += check_queries(f"{i}장", s)
-        prev_stat = is_stat
+        prev_stat = is_stat   # chart 는 종이 바탕이라 stat 연속 규칙에서 뺀다
 
     lo, hi = LIMITS["summary"]
     if not lo <= len(script["outro"]["summary"]) <= hi:
