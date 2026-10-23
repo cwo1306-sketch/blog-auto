@@ -30,13 +30,17 @@ MIN_CONTRAST = 4.5               # WCAG 2.x AA 일반 텍스트 기준
 STAT_MAX_QUOTE = 70
 
 
-def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num: str = "", palette: str = "") -> str:
+def _page(inner: str, bg: str | None, kind: str, source: str, page_no: str, num: str = "", palette: str = "",
+          layout: str = "") -> str:
     """2026 템플릿: 사진은 풀블리드가 아니라 .photo 액자 안에, 본문 장은 큰 번호(.num-big)를 단다."""
     photo = f"""<div class="photo"><div class="bg" style="background-image:url('{bg}')"></div></div>""" if bg else ""
     num_big = f'<div class="num-big">{num}</div>' if num else ""
     plain = "" if (bg or kind in ("stat", "outro", "list", "term", "qa", "compare", "quote")) else " plain"
     theme = os.environ.get("CARDNEWS_THEME", "").strip()
     theme_css = f'<link rel="stylesheet" href="../../templates/theme_{theme}.css">' if theme else ""
+    layout = layout or os.environ.get("CARDNEWS_LAYOUT", "").strip()       # 기본 frame 은 card.css 그대로
+    if layout and layout != "frame":
+        theme_css += f'<link rel="stylesheet" href="../../templates/layout_{layout}.css">'
     palette = palette or os.environ.get("CARDNEWS_PALETTE", "").strip()   # 기본 ocean 은 card.css 에 내장
     if palette and palette != "ocean":
         theme_css += f'<link rel="stylesheet" href="../../templates/palette_{palette}.css">'
@@ -96,10 +100,11 @@ def _compare_inner(s: dict) -> str:
             f'<div class="cols">{col(cmp.get("left", {}), "left")}<div class="vs">vs</div>{col(cmp.get("right", {}), "right")}</div></div>')
 
 
-def build_pages(script: dict, images: list[str | None], source: str, palette: str = "") -> list[str]:
+def build_pages(script: dict, images: list[str | None], source: str, palette: str = "", layout: str = "") -> list[str]:
     """images[i]는 i번째 장(0=표지)의 배경 파일명. 사진 없는 장(stat/list/term/qa/compare)과 단색 강등 장은 None.
-    palette: 돌려 쓰기 팔레트 이름(naver_cardnews.palette.ROTATION). 비우면 CARDNEWS_PALETTE → card.css 기본."""
-    page = functools.partial(_page, palette=palette)
+    palette: 돌려 쓰기 팔레트 이름(naver_cardnews.palette.ROTATION). 비우면 CARDNEWS_PALETTE → card.css 기본.
+    layout: 레이아웃 이름(naver_cardnews.compose.LAYOUTS). 비우면 CARDNEWS_LAYOUT → frame."""
+    page = functools.partial(_page, palette=palette, layout=layout)
     slides = script["slides"]
     total = 2 + len(slides)
     # 강조 줄은 형광펜(mark)으로. 글자색 노랑(구 템플릿)은 종이 배경에서 대비가 안 나와 쓰지 않는다
@@ -148,6 +153,7 @@ LAYOUT_JS = """() => {
           x: box.x, y: box.y, w: box.width, h: box.height, wrapped,
           value_overflow: num ? num.getBoundingClientRect().right > %d - 64 : false,
           photo_bottom: photo ? photo.getBoundingClientRect().bottom : null,
+          overlay: getComputedStyle(document.body).getPropertyValue('--overlay').trim() === '1',
           text_color: getComputedStyle(document.querySelector('.summary') || document.querySelector('.text h2')
                                        || document.querySelector('.line') || document.querySelector('.text')).color,
           fonts: document.fonts.status};
@@ -230,7 +236,8 @@ def render(pages: list[str], out_dir: str) -> tuple[list[str], list[dict]]:
                 tl = _luminance(rgb)
                 contrast = round(_contrast(bg_png, tl) if tl > 0.4 else _contrast_dark_text(bg_png, tl), 2)
                 os.remove(bg_png)
-                if box["photo_bottom"] is not None and box["top"] < box["photo_bottom"] + 20:
+                # 풀블리드처럼 글씨를 사진 위에 얹는 레이아웃(--overlay:1)은 겹침이 의도이므로 대비 검사만 한다
+                if box["photo_bottom"] is not None and not box["overlay"] and box["top"] < box["photo_bottom"] + 20:
                     issues.append(f"텍스트가 사진 액자와 겹침(top={box['top']:.0f}, photo_bottom={box['photo_bottom']:.0f})")
                 if contrast < MIN_CONTRAST:
                     issues.append(f"대비 부족 {contrast}:1")

@@ -27,6 +27,7 @@ import pexels
 import render
 
 import keys
+from naver_cardnews import compose as composer
 from naver_cardnews import palette
 from naver_cardnews.db import Database
 from naver_cardnews.imagehash import dhash, to_hex
@@ -74,7 +75,7 @@ def _normalize_slide_types(script: dict, body: str, log: list[str]) -> None:
 
 
 def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: int, queries: list[str],
-                headline: str, concept: str, out: str) -> tuple[str | None, dict]:
+                headline: str, concept: str, out: str, bonus=None) -> tuple[str | None, dict]:
     """검색 → 썸네일 → 비전 선택 → used_images 기록 → 원본 저장. 실패하면 (None, 사유)."""
     log: dict = {"queries": queries, "attempts": []}
     seen: set[tuple[str, str]] = set()
@@ -85,7 +86,7 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
                 c.image_bytes = download(c.thumb_url)
             except Exception as exc:  # noqa: BLE001
                 log.setdefault("thumb_errors", []).append(f"{c.key}: {exc}")
-        result = pick(cands, headline, concept, scorer, db, exclude=seen)
+        result = pick(cands, headline, concept, scorer, db, exclude=seen, bonus=bonus)
         seen.update(c.key for c, _ in result.scored)
         seen.update(c.key for c in cands)   # 심사 한도에 걸려 못 본 후보도 재검색 때 새 후보에 자리를 양보
         log["attempts"].append(result.to_dict())
@@ -105,7 +106,21 @@ def _pick_image(db: Database, scorer: HaikuScorer, article_id: str, slide_no: in
     return None, log
 
 
-def main(url: str, db_path: str, force: bool = False) -> str:
+def _compose(db: Database, article: dict, draft, script: dict | None, overrides: dict) -> composer.Composition:
+    """색 → 레이아웃 → 포맷. 명령줄·환경변수로 하나를 고정할 수 있다(--palette/--layout/--format,
+    CARDNEWS_PALETTE/CARDNEWS_LAYOUT). 엑셀에서 고친 원고는 포맷을 바꾸지 않는다."""
+    recent = [dict(r) for r in db.recent_compositions()]
+    locked = overrides.get("format") or (script.get("format") if draft is not None and draft["source"] == "excel" else None)
+    draft_fmt = script.get("format") if script is not None else None
+    pal_fixed = overrides.get("palette") or os.environ.get("CARDNEWS_PALETTE", "").strip()
+    lay_fixed = overrides.get("layout") or os.environ.get("CARDNEWS_LAYOUT", "").strip()
+    return composer.compose(article["body"], recent, locked_format=locked, draft_format=draft_fmt,
+                            seed=overrides.get("seed"),
+                            palettes=[palette.pick_rotation(0, pal_fixed)] if pal_fixed else None,
+                            layouts=[lay_fixed] if lay_fixed else None)
+
+
+def main(url: str, db_path: str, force: bool = False, overrides: dict | None = None) -> str:
     import validate
     import writer
 
@@ -126,20 +141,24 @@ def main(url: str, db_path: str, force: bool = False) -> str:
         if row is not None:
             db.set_body(aid, article["body"], article.get("press"))
 
-    if draft is not None:
-        script = json.loads(draft["script_json"])
+    # 구성: 색 → 레이아웃 → 포맷 (naver_cardnews/compose.py). 원고가 있으면 그 포맷을 되도록 재사용한다
+    script = json.loads(draft["script_json"]) if draft is not None else None
+    comp = _compose(db, article, draft, script, overrides or {})
+    notes.append("구성: " + " / ".join(comp.reasons))
+    if script is not None and script.get("format") == comp.format:
         errors = validate.check(script, article["body"])
         notes.append(f"원고: drafts v{draft['version']} ({draft['source']})")
     else:
-        script = writer.write(article)
+        script = writer.write(article, fmt=comp.format)
         errors = validate.check(script, article["body"])
         for _ in range(MAX_REWRITES):
             if not errors:
                 break
-            script = writer.write(article, script, errors)
+            script = writer.write(article, script, errors, fmt=comp.format)
             errors = validate.check(script, article["body"])
         db.save_draft(aid, {k: v for k, v in script.items() if k != "_usage"}, errors, "ai", script.get("_usage") or {})
-        notes.append("원고: writer 신규 생성")
+        draft = db.latest_draft(aid)
+        notes.append(f"원고: writer 신규 생성 (포맷 {comp.format})")
     if errors and not force:
         db.update_review(aid, None, f"검수 오류 {len(errors)}건 — 원고 시트 확인", None, None)
         db.conn.commit()
@@ -148,7 +167,7 @@ def main(url: str, db_path: str, force: bool = False) -> str:
     # LLM 판정 게이트: 사실 일치 2점 이하(수치 오류·근거 없는 귀속)는 사람이 놓치기 쉬워 제작 전에 멈춘다 (docs/EVAL.md)
     # 판정이 없는 버전(엑셀에서 막 고친 원고 등)은 여기서 채점한다.
     if not force:
-        version = draft["version"] if draft is not None else db.latest_draft(aid)["version"]
+        version = draft["version"]
         key = keys.load("Anthropic-jachi", "ANTHROPIC_API_KEY", required=False)
         ev = ensure_judged(db, aid, version, script, article["body"],
                            {"press": article.get("press", ""), "title": article.get("title", ""), "date": article.get("date", "")},
@@ -162,13 +181,14 @@ def main(url: str, db_path: str, force: bool = False) -> str:
     _normalize_slide_types(script, article["body"], notes)
 
     scorer = HaikuScorer(keys.load("Anthropic-jachi", "ANTHROPIC_API_KEY"))
+    tone = lambda b: composer.tone_harmony(b, comp.palette, comp.layout)   # noqa: E731 — 고른 색과 어울리는 사진에 가산점
     images: list[str | None] = []
     image_log: list[dict] = []
     try:
         cover = script["cover"]
         name, log = _pick_image(db, scorer, aid, 1, _queries(cover),
                                 " ".join(l["text"] for l in cover["lines"]),
-                                cover.get("image_concept", ""), out)
+                                cover.get("image_concept", ""), out, bonus=tone)
         images.append(name); image_log.append({"slide": 1, **log})
         for n, s in enumerate(script["slides"], start=2):
             kind = s.get("slide_type", "photo")
@@ -176,16 +196,14 @@ def main(url: str, db_path: str, force: bool = False) -> str:
                 images.append(None); image_log.append({"slide": n, "no_photo": kind})
                 continue
             name, log = _pick_image(db, scorer, aid, n, _queries(s), s["title"],
-                                    s.get("image_concept", s["body"][:80]), out)
+                                    s.get("image_concept", s["body"][:80]), out, bonus=tone)
             images.append(name); image_log.append({"slide": n, **log})
 
         source = f"출처: {article['press']} · {article['date'].replace('-', '.')}"
-        made = db.conn.execute("SELECT COUNT(*) FROM articles WHERE status IN ('제작완료','게시완료')").fetchone()[0]
-        pal = palette.pick_rotation(made, os.environ.get("CARDNEWS_PALETTE", ""))
-        files, qa = render.render(render.build_pages(script, images, source, palette=pal), out)
+        files, qa = render.render(render.build_pages(script, images, source, palette=comp.palette, layout=comp.layout), out)
 
         meta = {
-            "palette": pal,
+            "palette": comp.palette, "layout": comp.layout, "composition": comp.to_dict(),
             "article": {k: article[k] for k in ("id", "url", "title", "press", "date")},
             "script": script, "images": image_log, "cards": files,
             "qa": {"script_errors": errors, "notes": notes, "render": qa,
@@ -195,6 +213,7 @@ def main(url: str, db_path: str, force: bool = False) -> str:
         with open(os.path.join(out, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
+        db.record_composition(aid, comp.palette, comp.layout, comp.format, " / ".join(comp.reasons))
         if db.get(aid) is not None:
             db.update_review(aid, "제작완료", None, out, None)
             db.conn.commit()
@@ -211,5 +230,9 @@ if __name__ == "__main__":
     ap.add_argument("url")
     ap.add_argument("--db", default=os.path.join(ROOT, "data", "news.db"))
     ap.add_argument("--force", action="store_true", help="검수 오류가 있어도 렌더")
+    ap.add_argument("--palette", help="색 고정 (기본: 규칙 있는 무작위)")
+    ap.add_argument("--layout", help="레이아웃 고정: " + ", ".join(composer.LAYOUTS))
+    ap.add_argument("--format", help="포맷 고정 (원고를 그 포맷으로 다시 씀)")
+    ap.add_argument("--seed", type=int, help="무작위 재현용")
     a = ap.parse_args()
-    main(a.url, a.db, a.force)
+    main(a.url, a.db, a.force, {k: getattr(a, k) for k in ("palette", "layout", "format", "seed") if getattr(a, k) is not None})

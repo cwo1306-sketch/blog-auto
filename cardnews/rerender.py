@@ -25,7 +25,7 @@ def main(out: str) -> None:
         meta = json.load(f)
     a = meta["article"]
     source = f"출처: {a['press']} · {a['date'].replace('-', '.')}"
-    files, qa = render.render(render.build_pages(meta["script"], _images(meta), source, palette=meta.get("palette", "")), out)
+    files, qa = render.render(render.build_pages(meta["script"], _images(meta), source, palette=meta.get("palette", ""), layout=meta.get("layout", "")), out)
     meta["cards"] = files
     meta.setdefault("qa", {})["render"] = qa
     with open(meta_path, "w", encoding="utf-8") as f:

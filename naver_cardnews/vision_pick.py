@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Callable, Protocol
 
 from .db import Database
 from .imagehash import dhash, to_hex
@@ -118,11 +118,13 @@ class PickResult:
     scored: list[tuple[Candidate, VisionScore]] = field(default_factory=list)
     skipped_used: list[Candidate] = field(default_factory=list)
     skipped_similar: list[Candidate] = field(default_factory=list)
+    tone: dict[tuple[str, str], float] = field(default_factory=dict)   # 후보별 팔레트 톤 점수(0~1), bonus 를 줬을 때만
 
     def to_dict(self) -> dict:
         return {
             "chosen": _cand_dict(self.chosen) if self.chosen else None,
-            "candidates": [{**_cand_dict(c), "vision": s.to_dict()} for c, s in self.scored],
+            "candidates": [{**_cand_dict(c), "vision": s.to_dict(), **({"tone": self.tone[c.key]} if c.key in self.tone else {})}
+                           for c, s in self.scored],
             "skipped_used": [c.key for c in self.skipped_used],
             "skipped_similar": [c.key for c in self.skipped_similar],
         }
@@ -135,13 +137,16 @@ def _cand_dict(c: Candidate) -> dict:
 
 def pick(candidates: list[Candidate], headline: str, concept: str, scorer: Scorer, db: Database | None,
          max_score_calls: int = 8, min_total: float = 3.0, similar_distance: int = 8,
-         exclude: set[tuple[str, str]] | None = None) -> PickResult:
+         exclude: set[tuple[str, str]] | None = None, bonus: Callable[[bytes], float] | None = None,
+         bonus_weight: float = 0.5) -> PickResult:
     """후보 순서대로 점수를 매겨 최고점을 고른다. image_bytes가 채워진 후보만 심사한다.
 
     - 이미 쓴 사진(source, id)과 최근 30일 유사 해시(dHash)는 심사 전에 건너뛴다 (호출 절약)
     - 얼굴·글자·로고·브랜드 연상은 점수 0 (탈락)
     - 최고점이 min_total 미만이면 chosen=None → 호출자는 재검색 또는 단색 강등
     - exclude: 이번 실행에서 이미 심사한 (소스, id). 재검색 때 같은 후보를 다시 심사하지 않게 한다
+    - bonus: 사진 바이트 → 0~1 (예: 팔레트 톤 어울림). 순위는 비전 총점 + bonus×bonus_weight 로 정하되,
+      합격선(min_total)은 비전 총점만 본다 — 톤이 좋아도 내용이 안 맞는 사진은 뽑지 않는다
     """
     result = PickResult(chosen=None)
     calls = 0
@@ -158,7 +163,15 @@ def pick(candidates: list[Candidate], headline: str, concept: str, scorer: Score
             break
         calls += 1
         result.scored.append((c, scorer.score(c.image_bytes, headline, concept)))
-    best = max(result.scored, key=lambda cs: cs[1].total, default=None)
-    if best is not None and best[1].total >= min_total:
+    if bonus is not None:
+        for c, sc in result.scored:
+            if not sc.hard_fail:
+                try:
+                    result.tone[c.key] = round(float(bonus(c.image_bytes)), 3)
+                except Exception as exc:  # noqa: BLE001 — 톤 계산 실패는 가산점 0
+                    log.warning("tone bonus failed: %s", exc)
+    passed = [cs for cs in result.scored if cs[1].total >= min_total]
+    best = max(passed, key=lambda cs: cs[1].total + bonus_weight * result.tone.get(cs[0].key, 0.0), default=None)
+    if best is not None:
         result.chosen = best[0]
     return result

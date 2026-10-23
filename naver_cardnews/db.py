@@ -80,6 +80,17 @@ CREATE TABLE IF NOT EXISTS used_images (
 CREATE INDEX IF NOT EXISTS idx_used_images_ext ON used_images(source, external_id);
 CREATE INDEX IF NOT EXISTS idx_used_images_article ON used_images(article_id);
 
+-- 무작위 구성 기록: 색 → 레이아웃 → 포맷. 직전과 같은 조합을 피하는 데 쓴다 (naver_cardnews/compose.py)
+CREATE TABLE IF NOT EXISTS compositions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id  TEXT NOT NULL,
+    palette     TEXT NOT NULL,
+    layout      TEXT NOT NULL,
+    format      TEXT NOT NULL,
+    reasons     TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS collect_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     started_at  TEXT NOT NULL,
@@ -367,6 +378,17 @@ class Database:
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def record_composition(self, article_id: str, palette: str, layout: str, fmt: str, reasons: str = "") -> int:
+        cur = self.conn.execute(
+            "INSERT INTO compositions (article_id, palette, layout, format, reasons, created_at) VALUES (?,?,?,?,?,?)",
+            (article_id, palette, layout, fmt, reasons, utcnow()))
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def recent_compositions(self, n: int = 6) -> list[sqlite3.Row]:
+        """최근 구성 n개 (최신이 앞)."""
+        return list(self.conn.execute("SELECT * FROM compositions ORDER BY id DESC LIMIT ?", (n,)))
 
     def start_run(self) -> int:
         cur = self.conn.execute("INSERT INTO collect_runs (started_at) VALUES (?)", (utcnow(),))

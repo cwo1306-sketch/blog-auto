@@ -1,0 +1,16 @@
+/* 레이아웃: 풀블리드 — 사진을 화면 끝까지 깔고 하단을 딥 컬러 그라데이션으로 덮어 글씨를 얹는다.
+   글씨가 사진 위에 놓이므로 --overlay:1 로 '사진-글씨 겹침' 검사를 끄고 대비 검사만 한다. */
+body.cover, body.slide:not(.plain) { --overlay: 1; }
+body.cover .photo, body.slide:not(.plain) .photo { inset: 0; height: auto; border-radius: 0; box-shadow: none; }
+body.cover .photo::after, body.slide:not(.plain) .photo::after {
+  background: linear-gradient(180deg, transparent 22%, color-mix(in srgb, var(--deep) 90%, transparent) 52%, var(--deep) 66%); }
+body.cover .text, body.slide:not(.plain) .text { color: var(--on-deep); }
+body.cover .text { bottom: 160px; }
+body.cover .handle { color: var(--on-deep); opacity: .85; }
+body.slide:not(.plain) .text { top: auto; bottom: 150px; }
+body.slide:not(.plain) h2 { color: var(--on-deep); }
+body.slide:not(.plain) p { color: var(--on-deep); opacity: .92; }
+body.slide:not(.plain) .num-big { top: 128px; bottom: auto; color: var(--on-deep); opacity: .22; }
+body.cover .source, body.cover .page, body.slide:not(.plain) .source, body.slide:not(.plain) .page { color: var(--on-deep); opacity: .85; }
+/* 형광펜은 글자 아래 18~92%만 칠해서, 어두운 바탕에서는 칠하지 않은 윗부분(잉크색)이 묻힌다 → 글자 전체를 덮는 블록으로 */
+body.cover mark { background: var(--mark); color: var(--ink); border-radius: .14em; padding: 0 .14em; }
