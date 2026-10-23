@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+cardnews/output/
+cardnews/data/
+cardnews/.env
+cardnews/templates
+cardkit_data/

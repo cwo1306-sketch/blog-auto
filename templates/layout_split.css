@@ -1,0 +1,11 @@
+/* 레이아웃: 매거진 분할 — 사진이 위쪽 절반을 가장자리까지 채우고(둥근 모서리 없음), 아래는 종이 + 굵은 강조선 + 제목.
+   본문 장 번호는 사진 하단 경계에 걸친 퍼스널 컬러 배지. */
+body.cover .photo, body.slide .photo { left: 0; right: 0; top: 0; border-radius: 0; box-shadow: none; }
+body.cover .photo { height: 640px; }
+body.slide .photo { height: 680px; }
+body.cover .text::before, body.slide .text::before { content: ""; display: block; width: 96px; height: 12px; background: var(--line); margin-bottom: 30px; }
+body.slide .num-big { top: 640px; bottom: auto; right: auto; left: var(--m); font-size: 56px; line-height: 1; letter-spacing: 0;
+  opacity: 1; color: var(--on-brand); background: var(--brand); padding: 14px 22px 12px; border-radius: 14px; }
+body.slide .text { top: 790px; }
+body.slide.plain .num-big { top: 180px; }
+body.slide.plain .text { top: 300px; }

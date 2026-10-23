@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: naver-cardnews
+Version: 0.1.0
+Summary: 네이버 뉴스 수집 → 엑셀 큐 → 카드뉴스 제작 파이프라인 부품
+Requires-Python: >=3.10
+Requires-Dist: requests>=2.31
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: Pillow>=10
+Requires-Dist: anthropic>=1.0
+Requires-Dist: playwright>=1.45
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"

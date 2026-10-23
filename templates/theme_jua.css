@@ -1,0 +1,22 @@
+/* 주아체 테마 — card.css 뒤에 덧씌운다 (CARDNEWS_THEME=jua).
+   제목·숫자·표지만 배달의민족 주아체, 본문은 Pretendard 유지(긴 문장 가독성).
+   주아체는 굵기가 하나(Regular)뿐이라 font-weight 를 400 으로 두고 굵기 합성을 끈다(가짜 굵게 방지).
+   로컬 설치명(맥 BM JUA_OTF / 윈도우 BM JUA_TTF / 배달의민족 주아)과 구글 폰트명(Jua)을 모두 나열한다. */
+/* --display 는 card.css 에 정의돼 있다. 이 테마는 혼합(v2.2 기본)을 넘어 제목·숫자·인용까지 주아체로 바꾼다. */
+
+body.cover .line, body.slide h2, body.list h2, body.list .list-num, body.term .term, body.qa .q h2,
+body.compare h2, body.quote blockquote, body.outro .summary, body.stat .value, body.stat .stat-label,
+body.slide .num-big {
+  font-family: var(--display); font-weight: 400; font-synthesis: none; letter-spacing: -0.01em;
+}
+/* 주아체는 자폭이 넓고 획이 굵어 같은 크기에서 더 커 보인다 → 한 단계 낮춘다 */
+body.cover .line   { font-size: 90px; line-height: 1.16; }
+body.slide h2      { font-size: 60px; line-height: 1.22; }
+body.list h2       { font-size: 64px; }
+body.qa .q h2      { font-size: 60px; }
+body.quote blockquote { font-size: 52px; line-height: 1.36; }
+body.outro .summary   { font-size: 64px; line-height: 1.24; }
+body.stat .stat-label { font-size: 50px; }
+/* 둥근 글꼴에 맞춰 형광펜·라벨도 둥글게 */
+mark, .hl { border-radius: .18em; padding: 0 .12em; }
+.pill { font-family: var(--display); font-weight: 400; font-synthesis: none; font-size: 26px; }
