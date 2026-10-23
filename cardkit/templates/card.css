@@ -1,0 +1,194 @@
+/* cardkit 공통 카드 템플릿 (원본: AI 뉴스 3분 브리핑 v2.5) (타이포 주도 · 종이 톤 · 형광 포인트 · 번호 · 액자 사진 · 그레인)
+   로컬 templates/card.css 를 이 파일로 교체한다. 이전 '사진 풀블리드 + 스모크그레이' 시스템은 대체됨. */
+:root {
+  /* v2.3 색 체계 (2026-10-21): 역할 토큰. 값은 naver_cardnews/palette.py 의 'ocean' 과 같아야 한다(테스트로 검증).
+     60·30·10 — 배경 60 · 잉크 30 · 퍼스널 컬러 10. 퍼스널 컬러는 마무리 배경·강조선·인용부호에만, 살구는 형광펜에만. */
+  --bg: #F6F5F1;   /* 배경(종이) */
+  --bg-2: #EAE8E2;   /* 보조 배경(카드·사진 틀) */
+  --ink: #1C2A33;   /* 글씨(제목) */
+  --ink-2: #46545E;   /* 글씨(본문) */
+  --muted: #66727B;   /* 출처·보조 글씨 */
+  --brand: #13698F;   /* 퍼스널 컬러(마무리 배경·강조선·인용부호) */
+  --on-brand: #FFFFFF;   /* 퍼스널 컬러 위 글씨 */
+  --line: #13698F;   /* 밝은 배경 위 강조선·인용부호·번호 밑줄 */
+  --deep: #0E2C3C;   /* 숫자·비교 카드 배경 */
+  --on-deep: #F6F5F1;   /* 어두운 배경 위 글씨 */
+  --pop: #8ED3F2;   /* 어두운 배경 위 큰 숫자 */
+  --mark: #F8D3C6;   /* 형광펜(강조 줄 배경) */
+  --font: "Pretendard", "Pretendard Variable", "Noto Sans CJK KR", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  /* v2.2 혼합: 표지 헤드라인·마무리 요약만 배달의민족 주아체 (로컬 설치명 → 구글 폰트 Jua → Pretendard 순으로 폴백) */
+  --display: "BM JUA_OTF", "BM JUA_TTF", "BMJUA", "배달의민족 주아", "Jua", var(--font);
+  --m: 64px;             /* 안전 여백 (프로필 그리드 3:4 크롭 34px 포함) */
+}
+html, body { margin: 0; padding: 0; }
+body { position: relative; width: 1080px; height: 1350px; overflow: hidden; background: var(--bg); color: var(--ink);
+       font-family: var(--font); -webkit-font-smoothing: antialiased; letter-spacing: -0.01em; }
+/* 그레인 */
+body::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .07; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>"); }
+body.notext .text, body.notext .pill, body.notext .source, body.notext .page, body.notext .num-big, body.notext .quote { visibility: hidden; }
+
+/* 공통 머리·꼬리 */
+.pill { position: absolute; top: 52px; left: var(--m); font-size: 24px; font-weight: 700; letter-spacing: .02em;
+        padding: 10px 16px; border: 2px solid var(--ink); border-radius: 999px; color: var(--ink); background: var(--bg); }
+.handle { font-size: 26px; font-weight: 600; color: var(--ink-2); }
+.source { position: absolute; left: var(--m); bottom: 52px; font-size: 24px; color: var(--muted); }
+.page   { position: absolute; right: var(--m); bottom: 52px; font-size: 26px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* 사진: 풀블리드 대신 액자. 웜 틴트 + 살짝 어둡게 해서 스톡 색감을 한 톤으로 */
+.photo { position: absolute; left: var(--m); right: var(--m); border-radius: 28px; overflow: hidden; background: var(--bg-2);
+         box-shadow: 0 0 0 2px var(--ink); }
+.photo .bg { position: absolute; inset: 0; background-size: cover; background-position: center; filter: saturate(.8) contrast(.98) brightness(1.06); }
+.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 35%, transparent) 100%); }
+.photo { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ink) 45%, transparent); }
+.shade, .diag { display: none; }           /* 구 템플릿 요소 무력화 */
+
+/* 형광펜 강조 (writer highlight=true) */
+mark, .hl { background: linear-gradient(transparent 18%, var(--mark) 18%, var(--mark) 92%, transparent 92%); color: var(--ink); padding: 0 .06em; }
+
+/* 표지: 액자 사진 위, 대형 헤드라인 아래 (타이포가 주인공) */
+body.cover .photo { top: 128px; height: 486px; }      /* 세로의 36% */
+body.cover .text  { position: absolute; left: var(--m); right: var(--m); bottom: 170px; }   /* 하단 기준: 사진과 글 사이가 비는 에디토리얼 구도 */
+body.cover .line  { font-size: 96px; font-weight: 800; line-height: 1.12; letter-spacing: -0.04em; }
+body.cover .handle { margin-top: 26px; }
+
+/* 본문 장: 큰 번호(01) + 액자 사진 + 제목 + 본문 */
+body.slide .num-big { position: absolute; right: var(--m); bottom: 110px; font-size: 220px; font-weight: 800; line-height: .8;
+                      letter-spacing: -0.06em; color: var(--ink); opacity: .10; font-variant-numeric: tabular-nums; }
+body.slide .photo { top: 140px; height: 560px; }
+body.slide .text  { position: absolute; left: var(--m); right: var(--m); top: 770px; }
+body.slide h2 { margin: 0 0 24px; font-size: 64px; font-weight: 800; line-height: 1.18; letter-spacing: -0.03em; }
+body.slide p  { margin: 0; font-size: 36px; line-height: 1.55; color: var(--ink-2); word-break: keep-all; }
+body.slide.plain .photo { display: none; }
+body.slide.plain .text { top: 300px; }
+body.slide.plain h2 { font-size: 80px; }
+
+/* 숫자 카드: 잉크 배경으로 반전해 캐러셀에 리듬을 준다 */
+body.stat { background: var(--deep); color: var(--on-deep); }
+body.stat .pill { color: var(--on-deep); border-color: var(--on-deep); background: var(--deep); }
+body.stat .page, body.stat .source { color: var(--on-deep); opacity: .8; }
+body.stat .text { position: absolute; left: var(--m); right: var(--m); top: 50%; transform: translateY(-58%); }
+body.stat .value { font-weight: 800; line-height: .95; color: var(--pop); letter-spacing: -.04em; white-space: nowrap; }
+body.stat .value .unit { font-size: .4em; font-weight: 700; margin-left: .05em; }
+body.stat .value[data-len="short"]  { font-size: 380px; }
+body.stat .value[data-len="medium"] { font-size: 300px; }
+body.stat .value[data-len="long"]   { font-size: 240px; }
+body.stat .value .unit.below { display: block; font-size: .22em; margin: 18px 0 0; letter-spacing: 0; color: var(--on-deep); }
+body.stat .stat-label { margin-top: 44px; font-size: 52px; font-weight: 700; line-height: 1.25; color: var(--on-deep); }
+body.stat .quote { position: absolute; left: var(--m); right: var(--m); bottom: 150px; font-size: 30px; line-height: 1.5;
+  color: var(--on-deep); opacity: .72; border-left: 6px solid var(--pop); padding-left: 22px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* 마무리: 형광 블록 전면 — 저장·공유 CTA가 가장 잘 보이는 장 */
+body.outro { background: var(--brand); color: var(--on-brand); }
+body.outro .pill { background: var(--brand); color: var(--on-brand); border-color: var(--on-brand); }
+body.outro .photo { display: none; }
+body.outro .text { position: absolute; left: var(--m); right: var(--m); top: 300px; }
+body.outro .kicker { font-size: 30px; font-weight: 800; letter-spacing: .08em; margin-bottom: 28px; }
+body.outro .summary { font-size: 68px; font-weight: 800; line-height: 1.2; letter-spacing: -0.03em; margin-bottom: 44px; word-break: keep-all; }
+body.outro .question { font-size: 40px; line-height: 1.45; color: var(--on-brand); margin-bottom: 56px; word-break: keep-all; }
+body.outro .cta { display: flex; gap: 16px; margin-bottom: 40px; }
+body.outro .cta span { padding: 16px 30px; border: 3px solid currentColor; border-radius: 999px; font-size: 30px; font-weight: 700; }
+body.outro .source, body.outro .page, body.outro .handle { color: var(--on-brand); opacity: .8; }
+
+
+/* ---------- 구성 템플릿별 장 (사진 없음, 종이 배경) ---------- */
+/* 나열형: 큰 번호 + 제목 + 본문 */
+body.list .text { position: absolute; left: var(--m); right: var(--m); top: 200px; }
+body.list .list-num { font-size: 200px; font-weight: 800; line-height: .85; letter-spacing: -0.06em; color: var(--ink);
+                      margin-bottom: 36px; }
+body.list .list-num::after { content: ""; display: block; width: 120px; height: 14px; background: var(--line); margin-top: 22px; }
+body.list h2 { margin: 0 0 24px; font-size: 68px; font-weight: 800; line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
+body.list p { margin: 0; font-size: 38px; line-height: 1.55; color: var(--ink-2); word-break: keep-all; }
+
+/* 용어해설: 단어 크게(형광펜) + 정의 + 비유 */
+body.term .text { position: absolute; left: var(--m); right: var(--m); top: 220px; }
+body.term .kicker { font-size: 28px; font-weight: 800; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 28px; }
+body.term .term { font-size: 112px; font-weight: 800; line-height: 1.15; letter-spacing: -0.04em; margin-bottom: 40px; word-break: keep-all; }
+body.term .definition { font-size: 44px; font-weight: 700; line-height: 1.35; margin-bottom: 36px; word-break: keep-all;
+                        padding-left: 24px; border-left: 8px solid var(--ink); }
+body.term p { margin: 0; font-size: 36px; line-height: 1.55; color: var(--ink-2); word-break: keep-all; }
+
+/* 문답형: Q 카드 위, A 아래 */
+body.qa .text { position: absolute; left: var(--m); right: var(--m); top: 200px; }
+body.qa .badge { display: inline-block; font-size: 26px; font-weight: 800; padding: 8px 16px; border-radius: 10px;
+                 background: var(--deep); color: var(--on-deep); margin-bottom: 22px; letter-spacing: .04em; }
+body.qa .badge-a { background: var(--mark); color: var(--ink); }
+body.qa .q h2 { margin: 0 0 56px; font-size: 64px; font-weight: 800; line-height: 1.22; letter-spacing: -0.03em; word-break: keep-all; }
+body.qa .a { padding: 40px 44px; background: var(--bg-2); border-radius: 28px; }
+body.qa .a p { margin: 0; font-size: 36px; line-height: 1.55; color: var(--ink); word-break: keep-all; }
+
+/* 비교형: 2열 */
+body.compare .text { position: absolute; left: var(--m); right: var(--m); top: 180px; }
+body.compare h2 { margin: 0 0 40px; font-size: 60px; font-weight: 800; letter-spacing: -0.03em; }
+body.compare .cols { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+body.compare .col { border-radius: 28px; padding: 36px 32px 40px; min-height: 620px; }
+body.compare .col.left  { background: var(--bg-2); box-shadow: 0 0 0 2px var(--ink); }
+body.compare .col.right { background: var(--deep); color: var(--on-deep); }
+body.compare .col-label { font-size: 30px; font-weight: 800; letter-spacing: .02em; margin-bottom: 28px; padding-bottom: 18px;
+                          border-bottom: 3px solid currentColor; }
+body.compare .col.right .col-label { color: var(--pop); border-color: var(--pop); }
+body.compare ul { margin: 0; padding: 0; list-style: none; }
+body.compare li { font-size: 32px; line-height: 1.4; margin-bottom: 26px; padding-left: 30px; position: relative; word-break: keep-all; }
+body.compare li::before { content: ""; position: absolute; left: 0; top: 16px; width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
+body.compare .col.right li::before { background: var(--pop); }
+body.compare .vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 84px; height: 84px; border-radius: 50%;
+                   background: var(--brand); color: var(--on-brand); font-size: 28px; font-weight: 800; display: flex; align-items: center;
+                   justify-content: center; box-shadow: 0 0 0 4px var(--bg); }
+
+
+/* 그래프 장 (Apache ECharts, naver_cardnews/chart.py): 결론 제목 + 단위 + 그래프 + 해석 한 줄 */
+body.chart .text { position: absolute; left: var(--m); right: var(--m); top: 180px; }
+body.chart h2 { margin: 0 0 14px; font-size: 64px; font-weight: 800; line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
+body.chart .chart-unit { font-size: 28px; font-weight: 700; color: var(--ink-2); }
+body.chart #chart { position: absolute; left: var(--m); right: var(--m); top: 400px; height: 640px; }
+body.chart .chart-note { position: absolute; left: var(--m); right: var(--m); top: 1070px; margin: 0; font-size: 32px; line-height: 1.5;
+  color: var(--ink-2); word-break: keep-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+
+/* 인용 카드: 전문가·기관 발언 (연합뉴스 카드뉴스의 인용 장) */
+body.quote .text { position: absolute; left: var(--m); right: var(--m); top: 50%; transform: translateY(-56%); }
+body.quote .qmark { font-size: 220px; line-height: .6; font-weight: 800; color: var(--line); height: 120px; }
+body.quote blockquote { margin: 0 0 40px; font-size: 56px; font-weight: 700; line-height: 1.32; letter-spacing: -0.03em; word-break: keep-all; }
+body.quote .who { font-size: 30px; font-weight: 700; color: var(--ink-2); padding-left: 22px; border-left: 6px solid var(--line); margin-bottom: 44px; }
+body.quote .gist { display: inline-block; font-size: 28px; font-weight: 700; padding: 10px 18px; border-radius: 999px; background: var(--bg-2); color: var(--ink); }
+
+
+/* ---------- v2.2 혼합 폰트: 멈추게 하는 장(표지)·저장을 부르는 장(마무리)만 주아체 ----------
+   숫자·인용·본문 제목은 Pretendard 유지(신뢰감). 주아체는 굵기가 하나라 400 + 굵기 합성 끔(가짜 굵게 방지),
+   자폭이 넓어 크기를 한 단계 낮춘다. 전체 주아체가 필요하면 CARDNEWS_THEME=jua. */
+body.cover .line, body.outro .summary {
+  font-family: var(--display); font-weight: 400; font-synthesis: none; letter-spacing: -0.01em;
+}
+body.cover .line    { font-size: 90px; line-height: 1.16; }
+body.outro .summary { font-size: 64px; line-height: 1.24; }
+body.cover mark, body.outro mark { border-radius: .18em; padding: 0 .12em; }
+
+/* 마무리 장(퍼스널 컬러 배경) 위의 강조는 형광펜 대신 굵은 밑줄 */
+body.outro mark { background: none; color: inherit; box-shadow: inset 0 -.18em 0 color-mix(in srgb, var(--on-brand) 35%, transparent); }
+
+
+/* ---------- cardkit 추가 장 유형 ---------- */
+/* 체크리스트: 체크박스 항목 3~5개 */
+body.checklist .text { position: absolute; left: var(--m); right: var(--m); top: 190px; }
+body.checklist .kicker, body.myth .kicker { font-size: 28px; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); margin-bottom: 24px; }
+body.checklist h2 { margin: 0 0 44px; font-size: 64px; font-weight: 800; line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
+body.checklist .checks { margin: 0; padding: 0; list-style: none; }
+body.checklist .checks li { display: flex; align-items: flex-start; gap: 26px; font-size: 40px; font-weight: 600; line-height: 1.4;
+  padding: 26px 0; border-bottom: 2px solid color-mix(in srgb, var(--ink) 14%, transparent); word-break: keep-all; }
+body.checklist .box { flex: none; width: 44px; height: 44px; margin-top: 4px; border-radius: 10px; border: 4px solid var(--line); background: var(--bg); }
+body.checklist .note { margin: 34px 0 0; font-size: 30px; line-height: 1.5; color: var(--ink-2); word-break: keep-all; }
+
+/* 오해와 진실: 위 통념(취소선 느낌의 흐린 글씨) → 아래 사실 카드 */
+body.myth .text { position: absolute; left: var(--m); right: var(--m); top: 50%; transform: translateY(-52%); }
+body.myth .tag { display: inline-block; font-size: 28px; font-weight: 800; padding: 8px 18px; border-radius: 10px; margin-bottom: 22px; letter-spacing: .04em; }
+body.myth .tag-myth { background: var(--bg-2); color: var(--ink-2); }
+body.myth h2 { margin: 0 0 56px; font-size: 60px; font-weight: 800; line-height: 1.24; letter-spacing: -0.03em; color: var(--ink-2);
+  word-break: keep-all; text-decoration: line-through; text-decoration-thickness: 4px; text-decoration-color: color-mix(in srgb, var(--ink) 35%, transparent); }
+body.myth .fact { padding: 40px 44px; background: var(--deep); color: var(--on-deep); border-radius: 28px; }
+body.myth .tag-fact { background: var(--pop); color: var(--deep); }
+body.myth .fact p { margin: 0; font-size: 38px; line-height: 1.55; word-break: keep-all; }
+
+/* 마무리 면책 문구 (건강·심리·금융 계정) */
+body.outro .disclaimer { position: absolute; left: var(--m); right: var(--m); bottom: 110px; font-size: 24px; line-height: 1.45;
+  color: var(--on-brand); opacity: .85; word-break: keep-all; }

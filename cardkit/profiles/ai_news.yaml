@@ -1,0 +1,17 @@
+# AI 뉴스 계정 (blog-auto 의 'AI 뉴스 3분 브리핑'을 cardkit 설정으로 옮긴 예시)
+id: ai_news
+name: AI 뉴스 3분 브리핑
+label_top: AI로 재가공한 뉴스
+handle: "@your_handle"
+source_kind: 기사
+persona: 10년 차 뉴스 에디터이자 인스타그램 카드뉴스 기획자
+audience: AI·테크에 관심 있지만 전문가는 아닌 독자
+tone: 친근한 해요체('~해요/~인데요/~거든요'), stat·compare·quote 장은 간결체. 어려운 원리는 일상 비유로 한 번 풀어 준다
+hashtags_fixed: ["#AI뉴스", "#AI", "#테크뉴스"]
+photo_style: 차분한 어두운 톤·시네마틱·고급 테크 매거진 느낌인가.
+store_path: cardkit_data/ai_news.db
+
+palettes: [ocean, clay, sage, plum, mono, slate]
+layouts: [frame, fullbleed, split, card, band, type]
+fonts: {mode: mixed}
+formats: [debate, glossary, scene, reveal, qa, numbers, explainer]

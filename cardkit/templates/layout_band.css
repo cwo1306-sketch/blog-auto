@@ -1,0 +1,10 @@
+/* 레이아웃: 사이드 밴드 — 왼쪽 끝에 퍼스널 컬러 띠, 사진은 오른쪽 세로 액자, 본문 장 번호는 왼쪽 위에 크게. 신문 칼럼 느낌. */
+body.cover::before, body.slide::before, body.list::before, body.term::before, body.qa::before, body.compare::before, body.quote::before, body.chart::before, body.checklist::before, body.myth::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 22px; background: var(--brand); }
+body.cover .photo { left: 400px; top: 128px; height: 590px; }
+body.slide .photo { left: 400px; top: 140px; height: 590px; }
+body.slide .num-big { top: 150px; bottom: auto; right: auto; left: var(--m); font-size: 168px; opacity: 1; color: var(--line); }
+body.slide .num-big::after { content: ""; display: block; width: 72px; height: 10px; margin-top: 26px; background: var(--ink); }
+body.slide .text { top: 790px; }
+body.slide.plain .num-big { top: 150px; }
+body.slide.plain .text { top: 420px; }

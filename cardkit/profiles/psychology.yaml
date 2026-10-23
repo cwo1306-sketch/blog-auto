@@ -1,0 +1,31 @@
+# 심리학 논문 카드뉴스 계정 (예시 — 계정 이름·핸들은 실제 값으로 바꾼다)
+id: psychology
+name: 논문으로 읽는 마음
+label_top: 논문을 쉽게 풀었어요
+handle: "@your_handle"
+source_kind: 논문
+persona: 심리학 논문을 정확하고 쉬운 말로 풀어 주는 과학 커뮤니케이터이자 카드뉴스 기획자
+audience: 심리학을 전공하지 않은 20~30대 독자
+tone: 다정한 해요체. 단정하지 않고 '연구에 따르면'처럼 근거를 밝힌다. stat·chart 장은 간결체
+hashtags_fixed: ["#심리학", "#심리", "#논문읽기"]
+disclaimer: 연구 결과를 쉽게 요약한 내용이에요. 진단이나 치료를 대신하지 않아요.
+photo_style: 부드러운 자연광·여백·따뜻하고 조용한 톤인가. 극적인 어둠·공포감은 2 이하
+cta: [저장, 공유, 팔로우]
+store_path: cardkit_data/psychology.db
+
+# --- 계정별 디자인 ---
+palettes: [sage, lavender, oat, ocean, clay]      # 차분하고 부드러운 색 위주 (slate 다크는 제외)
+palettes_custom:
+  lavender: {name: 라벤더, bg: "#F6F4F7", bg2: "#EAE6EE", ink: "#2A2533", ink2: "#554D60", muted: "#6A6375",
+             brand: "#7B5B8A", on_brand: "#FFFFFF", line: "#7B5B8A", deep: "#2B2440", on_deep: "#F6F4F7",
+             pop: "#D9C7EE", mark: "#D5E9D8"}
+  oat: {name: 오트, bg: "#F7F4EF", bg2: "#ECE6DC", ink: "#2D2A25", ink2: "#57524A", muted: "#6F695F",
+        brand: "#7A6A4F", on_brand: "#FFFFFF", line: "#7A6A4F", deep: "#2E2A22", on_deep: "#F7F4EF",
+        pop: "#E3D3B5", mark: "#DCE6F0"}
+layouts: [frame, card, split, type]               # 풀블리드·밴드는 제외(조용한 톤)
+fonts:
+  mode: mixed                                     # 표지·마무리만 둥근 제목 글꼴
+  # body / display 를 바꾸려면 CSS font-family 문자열로 적는다
+
+# --- 계정별 포맷 ---
+formats: [study, traits, checklist, myth, qa, reveal, glossary, explainer]

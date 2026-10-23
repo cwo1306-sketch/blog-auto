@@ -7,3 +7,4 @@ cardnews/output/
 cardnews/data/
 cardnews/.env
 cardnews/templates
+cardkit_data/
